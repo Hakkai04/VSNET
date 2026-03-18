@@ -1,31 +1,33 @@
 import os
 # ==========================================
-# 1. 显卡与绘图后端设置
+# 1. 显卡与绘图后端设置 (必须在最前面)
 # ==========================================
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 请根据实际情况修改
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 根据需要修改 GPU 编号
 
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # 设置非交互式后端
 
 import json
 import torch
 import numpy as np
 import argparse
 import random
+import time
 import logging
 from pathlib import Path
 from tqdm import tqdm
 from torch.optim import AdamW
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
-from monai.networks.nets import UNet
+
 # MONAI 组件
 from monai.losses import DiceCELoss
-from monai.networks.nets import VNet  # <--- VNet
+# [修改 1] 导入 AttentionUnet
+from monai.networks.nets import AttentionUnet
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd, Orientationd, ScaleIntensityRanged,
     RandCropByPosNegLabeld, RandFlipd, RandRotated, RandShiftIntensityd, EnsureTyped,
-    SpatialPadd, Spacingd, AsDiscrete
+    AsDiscreted, SpatialPadd, Spacingd, AsDiscrete
 )
 from monai.data import CacheDataset, DataLoader
 from monai.metrics import DiceMetric
@@ -33,7 +35,7 @@ from monai.inferers import sliding_window_inference
 from monai.utils import set_determinism
 
 # -------------------------------------------------------------------------
-# 工具函数
+# 工具函数 (保持与 VSNet 一致)
 # -------------------------------------------------------------------------
 def increment_path(path, exist_ok=False, sep='', mkdir=False):
     path = Path(path)
@@ -49,7 +51,8 @@ def increment_path(path, exist_ok=False, sep='', mkdir=False):
     return path
 
 def get_logger(save_dir):
-    logger = logging.getLogger("VNet_Training")
+    # [修改日志名]
+    logger = logging.getLogger("AttentionUNet_Training")
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(message)s')
     file_handler = logging.FileHandler(os.path.join(save_dir, "train.log"))
@@ -61,19 +64,21 @@ def get_logger(save_dir):
     return logger
 
 def get_args():
-    parser = argparse.ArgumentParser(description="VNet Baseline Training Script")
+    parser = argparse.ArgumentParser(description="Attention UNet Training Script")
     parser.add_argument("--project", default="runs/train", help="Save results to project/name")
-    parser.add_argument("--name", default="vnet", help="Save results to project/name")
+    
+    # [修改 2] 修改默认 name，避免覆盖 Baseline 结果
+    parser.add_argument("--name", default="attention_unet", help="Save results to project/name")
     
     parser.add_argument("--data_dir", type=str, default="./dataset", help="Path to dataset root")
     parser.add_argument("--dataset_json", type=str, default="dataset_thin.json", help="Dataset json file name")
-    
     parser.add_argument("--max_epochs", type=int, default=2000, help="Maximum number of epochs")
     parser.add_argument("--val_interval", type=int, default=5, help="Validation interval")
-    # [新增] 物理 Batch Size (显卡能跑的大小，例如 2 或 4)
+    
+    # 梯度累积设置
     parser.add_argument("--batch_size", type=int, default=4, help="Physical batch size per GPU")
-    # [新增] 目标 Batch Size (论文中的 16)
     parser.add_argument("--target_batch_size", type=int, default=16, help="Target effective batch size")
+    
     parser.add_argument("--num_samples", type=int, default=4, help="Patches per volume")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-5, help="Weight decay")
@@ -133,7 +138,7 @@ def main():
     set_determinism(seed=42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # 1. 目录初始化
+    # 1. 初始化目录 (基于新的 args.name = "attention_unet")
     save_dir = increment_path(Path(args.project) / args.name, mkdir=True)
     weights_dir = save_dir / 'weights'
     weights_dir.mkdir(parents=True, exist_ok=True)
@@ -141,13 +146,13 @@ def main():
     logger = get_logger(save_dir)
     writer = SummaryWriter(log_dir=str(save_dir))
     
-    logger.info(f"🚀 VNet Training started. Results saved to {save_dir}")
+    logger.info(f"🚀 Attention UNet Training started. Results saved to {save_dir}")
     logger.info(f"Using device: {device}")
     
     with open(save_dir / 'opt.json', 'w') as f:
         json.dump(vars(args), f, indent=4)
 
-    # 2. 数据加载
+    # 2. 数据准备
     json_path = os.path.join(args.data_dir, args.dataset_json)
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"Dataset JSON not found: {json_path}")
@@ -155,11 +160,13 @@ def main():
     with open(json_path, "r") as f:
         data_json = json.load(f)
 
-    train_files = [{"image": os.path.join(args.data_dir, i["image"]), 
-                    "label": os.path.join(args.data_dir, i["label"])} 
-                   for i in data_json["training"]]
+    train_files = []
+    for item in data_json["training"]:
+        train_files.append({
+            "image": os.path.join(args.data_dir, item["image"]),
+            "label": os.path.join(args.data_dir, item["label"])
+        })
 
-    # 数据集划分
     random.seed(42)
     random.shuffle(train_files)
     split_idx = int(len(train_files) * 0.8)
@@ -175,28 +182,21 @@ def main():
     val_ds = CacheDataset(data=val_files, transform=val_transforms, cache_rate=1.0, num_workers=2)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
 
-    # 3. 模型构建: VNet
-    # 论文复现版 VNet 配置
-    # 3. 模型构建: 使用带残差的 UNet (即 Modern VNet)
-    # 相比原始 VNet，这个版本加了 Batch Norm，训练极其稳定
-    model = UNet(
+    # 3. 模型构建 (使用 AttentionUnet)
+    # [修改 3] 替换为 AttentionUnet
+    # 注意：AttentionUnet 通常不包含 residual units，它是标准的 U-Net 加上 Attention Gates
+    model = AttentionUnet(
         spatial_dims=3,
         in_channels=1,
-        out_channels=3,
-        channels=(16, 32, 64, 128, 256),
+        out_channels=3,             # 背景, HV, PV
+        channels=(32, 64, 128, 256, 512), # 保持大容量配置以对齐复现参数量
         strides=(2, 2, 2, 2),
-        
-        # === 关键修改 ===
-        num_res_units=2,  # 开启残差连接 -> 结构变身为 VNet
-        norm="batch",     # 开启批归一化 -> 解决 Dice 0.04 不收敛的问题
-        dropout=0.2,      # 适当加一点 Dropout 防止过拟合
-        # ===============
     ).to(device)
     
     params_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"VNet Model parameters: {params_num / 1e6:.2f}M")
+    logger.info(f"AttentionUnet Model parameters: {params_num / 1e6:.2f}M")
 
-    # 4. 优化器与 Loss
+    # [核心] Loss 定义
     loss_seg_fn = DiceCELoss(
         softmax=True, 
         to_onehot_y=True, 
@@ -208,11 +208,11 @@ def main():
     scaler = torch.amp.GradScaler('cuda')
 
     dice_metric = DiceMetric(include_background=False, reduction="mean_batch", get_not_nans=False)
+
     best_dice = -1
     best_epoch = -1
 
-    # [新增] 计算累积步数
-    # 如果物理 batch=4, 目标 batch=16, 则 accumulation_steps = 4
+    # 计算累积步数 (梯度累积逻辑保持不变)
     accumulation_steps = args.target_batch_size // args.batch_size
     if args.target_batch_size % args.batch_size != 0:
         logger.warning(f"⚠️ Target batch size {args.target_batch_size} implies fractional accumulation with batch size {args.batch_size}.")
@@ -226,7 +226,6 @@ def main():
         running_loss = 0
         steps = 0
         
-        # [修改 1] 在循环开始前先清零一次梯度
         optimizer.zero_grad()
 
         for i, batch_data in enumerate(pbar):
@@ -234,26 +233,21 @@ def main():
             inputs = batch_data["image"].to(device, non_blocking=True)
             labels = batch_data["label"].to(device, non_blocking=True)
 
-            # 注意：这里删除了 optimizer.zero_grad()，因为我们要累积梯度
-
             with torch.amp.autocast('cuda'):
                 outputs = model(inputs)
                 loss = loss_seg_fn(outputs, labels)
                 
-                # [修改 2] Loss 必须除以累积步数！
-                # 否则梯度会是原来的 accumulation_steps 倍，导致步子迈得太大
+                # 梯度累积：Loss 除以步数
                 loss = loss / accumulation_steps
 
-            # [修改 3] Backward 累积梯度
             scaler.scale(loss).backward()
 
-            # [修改 4] 只有达到累积步数时，才更新参数
             if (i + 1) % accumulation_steps == 0:
                 scaler.step(optimizer)
                 scaler.update()
-                optimizer.zero_grad()  # 更新完参数后，清零梯度
+                optimizer.zero_grad()
             
-            # 记录 Loss (为了显示正常的数值，我们乘回去)
+            # 还原 Loss 数值用于显示
             current_loss = loss.item() * accumulation_steps
             running_loss += current_loss
 
@@ -261,8 +255,6 @@ def main():
                 "Loss": f"{current_loss:.4f}"
             })
 
-        # 处理剩余的梯度 (如果 loader 长度不能整除 accumulation_steps)
-        # 这是一个边缘情况，通常可以忽略，或者在最后强制 step 一次
         if (len(train_loader) % accumulation_steps) != 0:
              scaler.step(optimizer)
              scaler.update()
@@ -279,9 +271,10 @@ def main():
         }
         torch.save(ckpt, weights_dir / "last.pth")
 
-        # 6. 验证循环
+        # 5. 验证循环
         if epoch % args.val_interval == 0:
             model.eval()
+            
             vis_dir = save_dir / "vis_check"
             vis_dir.mkdir(parents=True, exist_ok=True)
 
@@ -309,12 +302,13 @@ def main():
                         plt.figure(figsize=(12, 4), dpi=100)
                         plt.subplot(1, 3, 1); plt.imshow(img_show, cmap="gray"); plt.title("Image"); plt.axis('off')
                         plt.subplot(1, 3, 2); plt.imshow(lbl_show, cmap="jet", interpolation='nearest'); plt.title("Label"); plt.axis('off')
-                        plt.subplot(1, 3, 3); plt.imshow(pred_show, cmap="jet", interpolation='nearest'); plt.title(f"Pred E{epoch}"); plt.axis('off')
+                        plt.subplot(1, 3, 3); plt.imshow(pred_show, cmap="jet", interpolation='nearest'); plt.title(f"Pred Epoch {epoch}"); plt.axis('off')
                         plt.savefig(vis_dir / f"epoch_{epoch}_check.png")
                         plt.close()
 
                     val_outputs_onehot = AsDiscrete(argmax=True, to_onehot=3, dim=1)(val_outputs)
                     val_labels_onehot = AsDiscrete(to_onehot=3, dim=1)(val_labels)
+
                     dice_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
 
                 dice_score = dice_metric.aggregate()
@@ -323,16 +317,19 @@ def main():
                 mean_dice = dice_score.mean().item()
                 dice_metric.reset()
 
-                logger.info(f"\nEpoch {epoch} | Val Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}")
+                log_msg = (f"\nEpoch {epoch} | Val Mean Dice: {mean_dice:.4f} | "
+                           f"HV: {dice_hv:.4f} | PV: {dice_pv:.4f}")
+                logger.info(log_msg)
+                
                 writer.add_scalar("Val/Mean_Dice", mean_dice, epoch)
 
                 if mean_dice > best_dice:
                     best_dice = mean_dice
                     best_epoch = epoch
                     torch.save(ckpt, weights_dir / "best.pth")
-                    logger.info(f"🏆 New Best Model (Dice: {best_dice:.4f}) saved!")
+                    logger.info(f"🏆 New Best Model saved! (Dice: {best_dice:.4f})")
 
-    logger.info(f"VNet Training Finished. Best Dice: {best_dice:.4f} at epoch {best_epoch}")
+    logger.info(f"\nTraining completed. Best Dice: {best_dice:.4f} at epoch {best_epoch}")
     writer.close()
 
 if __name__ == "__main__":
