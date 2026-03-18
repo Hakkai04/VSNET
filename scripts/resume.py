@@ -1,4 +1,8 @@
 import os
+# ==========================================
+# 1. 显卡与绘图后端设置 (必须在最前面)
+# ==========================================
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 根据需要修改 GPU 编号
 import sys
 import yaml
 import torch
@@ -38,7 +42,7 @@ def main():
         return
 
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+        config = yaml.unsafe_load(f)
 
     if 'patch_size' in config:
         config['patch_size'] = tuple(config['patch_size'])

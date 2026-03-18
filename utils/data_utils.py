@@ -119,10 +119,11 @@ def get_dataloader(config):
     train_ds = CacheDataset(data=train_files, transform=train_transforms, cache_rate=0.5, num_workers=4)
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, 
-        num_workers=4, pin_memory=True, worker_init_fn=worker_init_fn
+        num_workers=4, pin_memory=True, worker_init_fn=worker_init_fn,
+        persistent_workers=True
     )
     
     val_ds = CacheDataset(data=val_files, transform=val_transforms, cache_rate=1.0, num_workers=2)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2, pin_memory=True, persistent_workers=True)
 
     return train_loader, val_loader

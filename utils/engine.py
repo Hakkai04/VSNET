@@ -237,5 +237,11 @@ class Trainer:
             if epoch % self.val_interval == 0:
                 self.validate_one_epoch(epoch)
                 
+            # 清理当前 epoch 产生的未引用显存和内存垃圾
+            # 避免 fork 子进程时继承悬空 CUDA Tensor 引发 'c10::AcceleratorError' 崩溃
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+                
         self.logger.info(f"\n🎉 Training completed. Best Dice: {self.best_dice:.4f} at epoch {self.best_epoch}")
         self.writer.close()

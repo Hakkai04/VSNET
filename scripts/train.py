@@ -1,4 +1,9 @@
 import os
+
+# ==========================================
+# 1. 显卡与绘图后端设置 (必须在最前面)
+# ==========================================
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 根据需要修改 GPU 编号
 import sys
 import yaml
 import json
