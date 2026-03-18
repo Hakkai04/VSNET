@@ -24,37 +24,19 @@ Rearrange, _ = optional_import("einops.layers.torch", name="Rearrange")
 __all__ = ["VSNet"]
 
 
-
-
 class GDT(nn.Module):
     def __init__(self, intdim: int, norm_layer: type[LayerNorm] = nn.LayerNorm, spatial_dims: int = 3) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            norm_layer: normalization layer.
-            spatial_dims: number of spatial dims.
-        """
-
         super().__init__()
-        self.dim = dim
+        self.dim = intdim
         if spatial_dims == 3:
-            self.reduction = nn.Linear(8 * dim, 2 * dim, bias=False)
-            self.norm = norm_layer(8 * dim)
+            self.reduction = nn.Linear(8 * intdim, 2 * intdim, bias=False)
+            self.norm = norm_layer(8 * intdim)
         elif spatial_dims == 2:
-            self.reduction = nn.Linear(4 * dim, 2 * dim, bias=False)
-            self.norm = norm_layer(4 * dim)
+            self.reduction = nn.Linear(4 * intdim, 2 * intdim, bias=False)
+            self.norm = norm_layer(4 * intdim)
 
 
 def window_partition(x, window_size):
-    """window partition operation based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        x: input tensor.
-        window_size: local window size.
-    """
     x_shape = x.size()
     if len(x_shape) == 5:
         b, d, h, w, c = x_shape
@@ -79,16 +61,6 @@ def window_partition(x, window_size):
 
 
 def window_reverse(windows, window_size, dims):
-    """window reverse operation based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        windows: windows tensor.
-        window_size: local window size.
-        dims: dimension values.
-    """
     if len(dims) == 4:
         b, d, h, w = dims
         x = windows.view(
@@ -111,17 +83,6 @@ def window_reverse(windows, window_size, dims):
 
 
 def get_window_size(x_size, window_size, shift_size=None):
-    """Computing window size based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        x_size: input size.
-        window_size: local window size.
-        shift_size: window shifting size.
-    """
-
     use_window_size = list(window_size)
     if shift_size is not None:
         use_shift_size = list(shift_size)
@@ -138,13 +99,6 @@ def get_window_size(x_size, window_size, shift_size=None):
 
 
 class WindowAttention(nn.Module):
-    """
-    Window based multi-head self attention module with relative position bias based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
-
     def __init__(
         self,
         dim: int,
@@ -154,16 +108,6 @@ class WindowAttention(nn.Module):
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            qkv_bias: add a learnable bias to query, key, value.
-            attn_drop: attention dropout rate.
-            proj_drop: dropout rate of output.
-        """
-
         super().__init__()
         self.dim = dim
         self.window_size = window_size
@@ -227,7 +171,7 @@ class WindowAttention(nn.Module):
         q = q * self.scale
         attn = q @ k.transpose(-2, -1)
         relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.clone()[:n, :n].reshape(-1)  # type: ignore
+            self.relative_position_index.clone()[:n, :n].reshape(-1)
         ].reshape(n, n, -1)
         relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
         attn = attn + relative_position_bias.unsqueeze(0)
@@ -247,21 +191,7 @@ class WindowAttention(nn.Module):
 
 
 class PatchMergingV2(nn.Module):
-    """
-    Patch merging layer based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
-
     def __init__(self, dim: int, norm_layer: type[LayerNorm] = nn.LayerNorm, spatial_dims: int = 3) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            norm_layer: normalization layer.
-            spatial_dims: number of spatial dims.
-        """
-
         super().__init__()
         self.dim = dim
         if spatial_dims == 3:
@@ -295,8 +225,6 @@ class PatchMergingV2(nn.Module):
 
 
 class PatchMerging(PatchMergingV2):
-    """The `PatchMerging` module previously defined in v0.9.0."""
-
     def forward(self, x):
         x_shape = x.size()
         if len(x_shape) == 4:
@@ -325,18 +253,6 @@ MERGING_MODE = {"merging": PatchMerging, "mergingv2": PatchMergingV2}
 
 
 def compute_mask(dims, window_size, shift_size, device):
-    """Computing region masks based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-
-     Args:
-        dims: dimension values.
-        window_size: local window size.
-        shift_size: shift size.
-        device: device.
-    """
-
     cnt = 0
 
     if len(dims) == 3:
@@ -364,15 +280,7 @@ def compute_mask(dims, window_size, shift_size, device):
     return attn_mask
 
 
-###################ours
 class SwinTransformerBlock(nn.Module):
-    """
-    Swin Transformer block based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
-
     def __init__(
         self,
         dim: int,
@@ -388,22 +296,6 @@ class SwinTransformerBlock(nn.Module):
         norm_layer: type[LayerNorm] = nn.LayerNorm,
         use_checkpoint: bool = False,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            shift_size: window shift size.
-            mlp_ratio: ratio of mlp hidden dim to embedding dim.
-            qkv_bias: add a learnable bias to query, key, value.
-            drop: dropout rate.
-            attn_drop: attention dropout rate.
-            drop_path: stochastic depth rate.
-            act_layer: activation layer.
-            norm_layer: normalization layer.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-        """
-
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
@@ -486,26 +378,19 @@ class SwinTransformerBlock(nn.Module):
     def load_from(self, weights, n_block, layer):
         root = f"module.{layer}.0.blocks.{n_block}."
         block_names = [
-            "norm1.weight",
-            "norm1.bias",
-            "attn.relative_position_bias_table",
-            "attn.relative_position_index",
-            "attn.qkv.weight",
-            "attn.qkv.bias",
-            "attn.proj.weight",
-            "attn.proj.bias",
-            "norm2.weight",
-            "norm2.bias",
-            "mlp.fc1.weight",
-            "mlp.fc1.bias",
-            "mlp.fc2.weight",
-            "mlp.fc2.bias",
+            "norm1.weight", "norm1.bias",
+            "attn.relative_position_bias_table", "attn.relative_position_index",
+            "attn.qkv.weight", "attn.qkv.bias",
+            "attn.proj.weight", "attn.proj.bias",
+            "norm2.weight", "norm2.bias",
+            "mlp.fc1.weight", "mlp.fc1.bias",
+            "mlp.fc2.weight", "mlp.fc2.bias",
         ]
         with torch.no_grad():
             self.norm1.weight.copy_(weights["state_dict"][root + block_names[0]])
             self.norm1.bias.copy_(weights["state_dict"][root + block_names[1]])
             self.attn.relative_position_bias_table.copy_(weights["state_dict"][root + block_names[2]])
-            self.attn.relative_position_index.copy_(weights["state_dict"][root + block_names[3]])  # type: ignore
+            self.attn.relative_position_index.copy_(weights["state_dict"][root + block_names[3]])
             self.attn.qkv.weight.copy_(weights["state_dict"][root + block_names[4]])
             self.attn.qkv.bias.copy_(weights["state_dict"][root + block_names[5]])
             self.attn.proj.weight.copy_(weights["state_dict"][root + block_names[6]])
@@ -531,15 +416,7 @@ class SwinTransformerBlock(nn.Module):
         return x
 
 
-
 class SwinLayer(nn.Module):
-    """
-    Basic Swin Transformer layer in one stage based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
-
     def __init__(
         self,
         dim: int,
@@ -556,22 +433,6 @@ class SwinLayer(nn.Module):
         downsample: nn.Module | None = None,
         use_checkpoint: bool = False,
     ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            depth: number of layers in each stage.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            drop_path: stochastic depth rate.
-            mlp_ratio: ratio of mlp hidden dim to embedding dim.
-            qkv_bias: add a learnable bias to query, key, value.
-            drop: dropout rate.
-            attn_drop: attention dropout rate.
-            norm_layer: normalization layer.
-            downsample: an optional downsampling layer at the end of the layer.
-            use_checkpoint: use gradient checkpointing for reduced memory usage.
-        """
-
         super().__init__()
         self.window_size = window_size
         self.shift_size = tuple(i // 2 for i in window_size)
@@ -599,7 +460,6 @@ class SwinLayer(nn.Module):
         self.downsample = downsample
         if callable(self.downsample):
             self.downsample = downsample(dim=dim, norm_layer=norm_layer, spatial_dims=len(self.window_size))
-        normalize = normalize
 
     def proj_out(self, x, normalize):
         if normalize:
@@ -611,7 +471,6 @@ class SwinLayer(nn.Module):
         return x
 
     def forward(self, x):
-        # x = self.patch_embed(x)
         x_shape = x.size()
         b, c, d, h, w = x_shape
         window_size, shift_size = get_window_size((d, h, w), self.window_size, self.shift_size)
@@ -626,24 +485,21 @@ class SwinLayer(nn.Module):
         if self.downsample is not None:
             x = self.downsample(x)
         x_out = rearrange(x, "b d h w c -> b c d h w")
-        # x_out = self.proj_out(x, normalize)
         return x_out
 
 
 class DepTran(nn.Module):
-
-    def __init__(
-            self, in_channels, out_channels
-    ):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.conv1 = nn.Conv3d(in_channels, in_channels, kernel_size=1,stride=1,padding=0,bias=True)
-        self.groupconv1 = nn.Conv3d(in_channels, 2*in_channels, kernel_size=1,stride=1,padding=0,bias=True,groups=in_channels)
+        self.conv1 = nn.Conv3d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, bias=True)
+        self.groupconv1 = nn.Conv3d(in_channels, 2*in_channels, kernel_size=1, stride=1, padding=0, bias=True, groups=in_channels)
         self.gelu = nn.GELU()
         self.sigmoid = nn.Sigmoid()
-        self.conv2 = nn.Conv3d(in_channels, out_channels, kernel_size=1,stride=1,padding=0,bias=True)
+        # [核心修复 3] 恢复 3x3x3 卷积，维持局部感受野
+        self.conv2 = nn.Conv3d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=True)
         self.relu = nn.LeakyReLU(inplace=True)
 
-    def forward(self,x):
+    def forward(self, x):
         out = self.conv1(x)
         out = self.groupconv1(out)
         x1, x2 = torch.chunk(out, 2, dim=1)
@@ -655,22 +511,22 @@ class DepTran(nn.Module):
         out = self.relu(out)
         return out
 
-class Gate(nn.Module):
 
+class Gate(nn.Module):
     def __init__(self, in_channels_up, in_channels_down, out_channels):
         super(Gate, self).__init__()
         self.w1 = nn.Sequential(
-            nn.Conv3d(in_channels_up, out_channels, kernel_size=1,stride=1,padding=0,bias=True),
+            nn.Conv3d(in_channels_up, out_channels, kernel_size=1, stride=1, padding=0, bias=True),
             nn.InstanceNorm3d(out_channels)
         )
         self.w2 = nn.Sequential(
-            nn.ConvTranspose3d(in_channels_down,out_channels, kernel_size=2, stride=2, bias=False),
-            nn.Conv3d(out_channels, out_channels, kernel_size=1,stride=1,padding=0,bias=True),
+            nn.ConvTranspose3d(in_channels_down, out_channels, kernel_size=2, stride=2, bias=False),
+            nn.Conv3d(out_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=True),
             nn.InstanceNorm3d(out_channels)
         )
         self.relu = nn.LeakyReLU(inplace=True)
         self.psi = nn.Sequential(
-            nn.Conv3d(out_channels, 1, kernel_size=1,stride=1,padding=0,bias=True),
+            nn.Conv3d(out_channels, 1, kernel_size=1, stride=1, padding=0, bias=True),
             nn.InstanceNorm3d(1),
             nn.Sigmoid()
         )
@@ -683,31 +539,25 @@ class Gate(nn.Module):
         return x1 * psi
 
 
-
-
-
 class CSA(nn.Module):
     def __init__(
             self,
             in_chans: int,
-            # img_size=(96,96,96),
             img_size: int,
             dropout_rate: float = 0.0,
             save_attn: bool = False,
-
     ) -> None:
         super().__init__()
-        # d, w, h = img_size[0]//16, image_size[1]//16, image_size[2]//16,
-        d = img_size//16
-        h = img_size//16
-        w = img_size//16
-        self.norm = nn.LayerNorm([d,w,h])
-        self.scale =(d*w*h)**-0.5
+        d = img_size // 16
+        h = img_size // 16
+        w = img_size // 16
+        self.norm = nn.LayerNorm([d, w, h])
+        self.scale = (d * w * h) ** -0.5
         self.groupconv = nn.Conv3d(
             in_channels=in_chans,
             out_channels=in_chans * 3,
-            kernel_size = 1,
-            groups = in_chans
+            kernel_size=1,
+            groups=in_chans
         )
         self.q_rearrange = Rearrange("b q d h w-> b q (d h w)", d=d, h=h, w=w)
         self.k_rearrange = Rearrange("b c d h w-> b c (d h w)", d=d, h=h, w=w)
@@ -716,8 +566,7 @@ class CSA(nn.Module):
         self.save_attn = save_attn
         self.att_mat = torch.Tensor()
 
-
-    def forward(self,x):
+    def forward(self, x):
         out = self.norm(x)
         out = self.groupconv(out)
         q, k, v = torch.chunk(out, 3, dim=1)
@@ -733,8 +582,6 @@ class CSA(nn.Module):
         return x_out
 
 
-
-
 class SSA(nn.Module):
     def __init__(
             self,
@@ -746,7 +593,6 @@ class SSA(nn.Module):
             save_attn: bool = False,
             dim_head: int | None = None,
     ) -> None:
-
         super().__init__()
 
         if not (0 <= dropout_rate <= 1):
@@ -755,9 +601,9 @@ class SSA(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError("hidden size should be divisible by num_heads.")
 
-        d = img_size//16
-        h = img_size//16
-        w = img_size//16
+        d = img_size // 16
+        h = img_size // 16
+        w = img_size // 16
         self.re1 = Rearrange("b c d h w-> b d h w c")
         self.norm = nn.LayerNorm(hidden_size)
         self.num_heads = num_heads
@@ -769,7 +615,7 @@ class SSA(nn.Module):
         self.out_proj = nn.Linear(self.inner_dim, hidden_size)
         self.qkv = nn.Linear(hidden_size, self.inner_dim * 3, bias=qkv_bias)
         self.input_rearrange = Rearrange("b x (qkv l n) -> qkv b l x n", qkv=3, l=num_heads)
-        self.out_rearrange1 = Rearrange("b l x n -> b x (l n)", l = num_heads, x = d*h*w)
+        self.out_rearrange1 = Rearrange("b l x n -> b x (l n)", l=num_heads, x=d * h * w)
         self.out_rearrange2 = Rearrange("b (d h w) c-> b d h w c", d=d, h=h, w=w)
         self.drop_output = nn.Dropout(dropout_rate)
         self.drop_weights = nn.Dropout(dropout_rate)
@@ -801,11 +647,6 @@ class SSA(nn.Module):
 
 
 class SABlock(nn.Module):
-    """
-    A self-attention block, based on: "Dosovitskiy et al.,
-    An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>"
-    """
-
     def __init__(
         self,
         hidden_size: int,
@@ -815,17 +656,6 @@ class SABlock(nn.Module):
         save_attn: bool = False,
         dim_head: int | None = None,
     ) -> None:
-        """
-        Args:
-            hidden_size (int): dimension of hidden layer.
-            num_heads (int): number of attention heads.
-            dropout_rate (float, optional): fraction of the input units to drop. Defaults to 0.0.
-            qkv_bias (bool, optional): bias term for the qkv linear layer. Defaults to False.
-            save_attn (bool, optional): to make accessible the attention matrix. Defaults to False.
-            dim_head (int, optional): dimension of each head. Defaults to hidden_size // num_heads.
-
-        """
-
         super().__init__()
 
         if not (0 <= dropout_rate <= 1):
@@ -864,32 +694,27 @@ class SABlock(nn.Module):
 
 
 class Outlayer(nn.Module):
-    def __init__(self, in_channels, out_channels, activation):
+    def __init__(self, in_channels, out_channels, activation=None):
         super(Outlayer, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv3d(in_channels, out_channels, kernel_size=1,stride=1,padding=0,bias=True),
-            nn.InstanceNorm3d(out_channels)
-        )
+        # [核心修复 1 & 2] 移除 nn.InstanceNorm3d，通过 activation=None 默认输出纯 Logits
+        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=True)
+        
         if activation == "Sigmoid":
             self.act = nn.Sigmoid()
-        elif  activation == "Softmax":
+        elif activation == "Softmax":
             self.act = nn.Softmax(dim=1)
         else:
-            raise  ValueError('Unproper Activation')
+            self.act = nn.Identity()
 
-    def forward(self,x):
+    def forward(self, x):
         x = self.conv(x)
         x = self.act(x)
         return x
 
 
-
-
-
 class VSNet(nn.Module):
     def __init__(
         self,
-        # img_size: Sequence[int] | int,
         in_channels: int,
         out_channels: int,
         depth: int = 2,
@@ -922,7 +747,7 @@ class VSNet(nn.Module):
         )
         self.resuetencoder2 = UnetrBasicBlock(
             spatial_dims=spatial_dims,
-            in_channels= feature_size,
+            in_channels=feature_size,
             out_channels=2 * feature_size,
             kernel_size=3,
             stride=1,
@@ -954,26 +779,24 @@ class VSNet(nn.Module):
         self.pool3 = Pool['MAX', 3](kernel_size=2)
         self.pool4 = Pool['MAX', 3](kernel_size=2)
 
-        self.gate2 = Gate(in_channels_up=feature_size,in_channels_down=2 * feature_size,
-                          out_channels=feature_size)
-        self.gate3 = Gate(in_channels_up=2 *feature_size,in_channels_down=4 * feature_size,
-                          out_channels=2 *feature_size)
-        self.gate4 = Gate(in_channels_up=4 *feature_size,in_channels_down=8 * feature_size,
-                          out_channels=4 *feature_size)
+        self.gate2 = Gate(in_channels_up=feature_size, in_channels_down=2 * feature_size, out_channels=feature_size)
+        self.gate3 = Gate(in_channels_up=2 * feature_size, in_channels_down=4 * feature_size, out_channels=2 * feature_size)
+        self.gate4 = Gate(in_channels_up=4 * feature_size, in_channels_down=8 * feature_size, out_channels=4 * feature_size)
 
         window_size = ensure_tuple_rep(7, spatial_dims)
-        self.swintransformer = SwinLayer(dim = 8 *feature_size,
-                                         num_heads=3,depth = depth,
-                                         window_size=window_size,normalize=normalize,
-                                         downsample=look_up_option(downsample, MERGING_MODE) if isinstance(downsample, str) else downsample)
-        self.CSA = CSA(in_chans=16 *feature_size, img_size=img_size)
-        self.SSA = SSA(hidden_size=16 *feature_size, img_size=img_size, num_heads=3)
+        self.swintransformer = SwinLayer(
+            dim=8 * feature_size,
+            num_heads=3, depth=depth,
+            window_size=window_size, normalize=normalize,
+            downsample=look_up_option(downsample, MERGING_MODE) if isinstance(downsample, str) else downsample
+        )
+        self.CSA = CSA(in_chans=16 * feature_size, img_size=img_size)
+        self.SSA = SSA(hidden_size=16 * feature_size, img_size=img_size, num_heads=3)
 
-
-        self.dt4 = DepTran(in_channels=16 *feature_size,out_channels=16 *feature_size)
-        self.dt3 = DepTran(in_channels=8 *feature_size,out_channels=8 *feature_size)
-        self.dt2 = DepTran(in_channels=4 *feature_size,out_channels=4 *feature_size)
-        self.dt1 = DepTran(in_channels=2 *feature_size,out_channels=2*feature_size)
+        self.dt4 = DepTran(in_channels=16 * feature_size, out_channels=16 * feature_size)
+        self.dt3 = DepTran(in_channels=8 * feature_size, out_channels=8 * feature_size)
+        self.dt2 = DepTran(in_channels=4 * feature_size, out_channels=4 * feature_size)
+        self.dt1 = DepTran(in_channels=2 * feature_size, out_channels=2 * feature_size)
 
         self.decoder5 = UnetrUpBlock(
             spatial_dims=spatial_dims,
@@ -1014,43 +837,26 @@ class VSNet(nn.Module):
             res_block=True,
         )
 
-        self.decodercat = Outlayer(in_channels=feature_size,
-                                    out_channels=3,
-                                   activation='Softmax')
+        # [核心修复 4] 所有输出层关闭内部激活，输出 Logits 以支持外部混合 Loss
+        self.decodercat = Outlayer(in_channels=feature_size, out_channels=3, activation=None)
+        self.decodercl_r = Outlayer(in_channels=feature_size, out_channels=1, activation=None)
+        self.decodere_seg = Outlayer(in_channels=feature_size, out_channels=2, activation=None)
+        self.deepsupervision2 = Outlayer(in_channels=feature_size * 2, out_channels=3, activation=None)
+        self.deepsupervision3 = Outlayer(in_channels=feature_size * 4, out_channels=3, activation=None)
 
-        self.decodercl_r = Outlayer(in_channels=feature_size,
-                                    out_channels=1,
-                                   activation='Sigmoid')
-
-
-        self.decodere_seg = Outlayer(in_channels=feature_size,
-                                    out_channels=2,
-                                   activation='Softmax')
-
-        self.deepsupervision2 = Outlayer(in_channels=feature_size*2,
-                                    out_channels=3,
-                                   activation='Softmax')
-
-        self.deepsupervision3 = Outlayer(in_channels=feature_size*4,
-                                    out_channels=3,
-                                   activation='Softmax')
-
-
-
-
-    def forward(self,x):
-        x1  = self.resuetencoder1(x)
+    def forward(self, x):
+        x1 = self.resuetencoder1(x)
         x2 = self.resuetencoder2(x1)
         x2 = self.pool2(x2)
-        x1 = self.gate2(x1,x2)
+        x1 = self.gate2(x1, x2)
         x3 = self.resuetencoder3(x2)
         x3 = self.pool3(x3)
-        x2 = self.gate3(x2,x3)
+        x2 = self.gate3(x2, x3)
         x4 = self.resuetencoder4(x3)
         x4 = self.pool4(x4)
-        x3 = self.gate4(x3,x4)
+        x3 = self.gate4(x3, x4)
+        
         x5 = self.swintransformer(x4.contiguous())
-
         x5 = self.CSA(x5)
         x5 = self.SSA(x5)
 
@@ -1070,32 +876,17 @@ class VSNet(nn.Module):
         deep2 = self.deepsupervision2(up2)
         deep3 = self.deepsupervision3(up3)
 
-
         if self.training:
             return seg_v, reg, seg_e, deep2, deep3
-            # return x5
         else:
             return seg_v
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     image_size = 96
-    x = torch.Tensor(4, 1, image_size, image_size, image_size)
-    x.to(device)
+    x = torch.Tensor(4, 1, image_size, image_size, image_size).to(device)
     print("x size: {}".format(x.size()))
 
-    model = VSNet(img_size=image_size, in_channels=1, out_channels=3, training=False)
-
-
-
-    # out, out2, out3, out4, out5 = model(x)
+    model = VSNet(img_size=image_size, in_channels=1, out_channels=3, training=False).to(device)
     out = model(x)
     print("out size: {}".format(out.size()))
-    # print("out2 size: {}".format(out2.size()))
-    # print("out3 size: {}".format(out3.size()))
-    # print("out4 size: {}".format(out4.size()))
-    # print("out5 size: {}".format(out5.size()))
-
-
-
-
