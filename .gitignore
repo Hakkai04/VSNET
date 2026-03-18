@@ -1,0 +1,60 @@
+# ==========================================
+# 1. Dataset / Data
+# ==========================================
+dataset/
+*.nii
+*.nii.gz
+
+# ==========================================
+# 2. Training Outputs / Logs / Checkpoints
+# ==========================================
+runs/
+*.pth
+*.pt
+*.ckpt
+*.log
+vis_check/
+opt.json
+opt.yaml
+
+# ==========================================
+# 3. Python specific
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==========================================
+# 4. Environments
+# ==========================================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# 5. IDE / System Artifacts
+# ==========================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
