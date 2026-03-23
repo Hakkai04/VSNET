@@ -6,7 +6,8 @@ data_dir: "./dataset"
 dataset_json: "dataset_full_thin.json"
 
 # Training Hyperparameters
-max_epochs: 2000
+max_epochs: 10000
+patience: 1000
 val_interval: 5
 batch_size: 4
 target_batch_size: 16

@@ -80,7 +80,21 @@ def get_config():
 
 def main():
     config = get_config()
-    set_determinism(seed=42)
+    
+    # 固定全局随机种子，确保每次运行的数据划分及网络初始化结果绝对一致
+    seed = 42
+    import random
+    import numpy as np
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    set_determinism(seed=seed)
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 1. 目录初始化

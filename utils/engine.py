@@ -58,6 +58,7 @@ class Trainer:
         )
         self.best_dice = -1.0
         self.best_epoch = -1
+        self.patience = config.get("patience", 2000)
 
     def train_one_epoch(self, epoch):
         self.model.train()
@@ -236,6 +237,11 @@ class Trainer:
             
             if epoch % self.val_interval == 0:
                 self.validate_one_epoch(epoch)
+                
+                # Check Early Stopping
+                if self.best_epoch > 0 and (epoch - self.best_epoch) >= self.patience:
+                    self.logger.info(f"⚠️ Early stopping triggered! No improvement in {self.patience} epochs.")
+                    break
                 
             # 清理当前 epoch 产生的未引用显存和内存垃圾
             # 避免 fork 子进程时继承悬空 CUDA Tensor 引发 'c10::AcceleratorError' 崩溃
