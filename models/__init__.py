@@ -1,5 +1,6 @@
 import torch
 from .VSNet import VSNet
+from .LYNet import LYNet
 from monai.networks.nets import UNet, AttentionUnet
 
 def build_model(config, device="cpu"):
@@ -47,6 +48,8 @@ def build_model(config, device="cpu"):
             channels=(32, 64, 128, 256, 512),
             strides=(2, 2, 2, 2),
         )
+    elif name == "lynet":
+        model = LYNet(in_channels=1, num_classes=3)
     else:
         raise ValueError(f"Unknown model_name: {name}")
         

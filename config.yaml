@@ -1,7 +1,7 @@
 # Project Structure
 project: "runs/train"
-name: "vsnet"
-model_name: "vsnet" # Change to "unet", "vnet", or "attention_unet" to test others
+name: "lynet"
+model_name: "lynet"
 data_dir: "./dataset"
 dataset_json: "dataset_full_thin.json"
 
