@@ -34,6 +34,30 @@ class VSNetLoss(nn.Module):
         loss = L_se + self.alpha * L_cr + self.beta * L_ec + self.gamma * L_deep
         return loss, {"seg": L_se.item(), "reg": L_cr.item(), "edge": L_ec.item()}
 
+class LYNetLoss(nn.Module):
+    def __init__(self, alpha=1.0, beta=1.0):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        
+        self.criterion_seg = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
+        self.criterion_edge = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
+        self.criterion_reg = nn.MSELoss()
+
+    def forward(self, outputs, targets):
+        # LYNet返回：seg_out, center_out, edge_out
+        seg_v, reg, seg_e = outputs
+        labels = targets["label"]
+        edges = targets["edge"]
+        regs = targets["reg"]
+
+        L_se = self.criterion_seg(seg_v, labels)
+        L_cr = self.criterion_reg(reg, regs)
+        L_ec = self.criterion_edge(seg_e, edges)
+        
+        loss = L_se + self.alpha * L_cr + self.beta * L_ec
+        return loss, {"seg": L_se.item(), "reg": L_cr.item(), "edge": L_ec.item()}
+
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
         super().__init__()
@@ -41,6 +65,8 @@ class StandardLossWrapper(nn.Module):
         
     def forward(self, outputs, targets):
         labels = targets["label"]
+        if isinstance(outputs, (tuple, list)):
+            outputs = outputs[0]
         loss = self.criterion(outputs, labels)
         return loss, {"seg": loss.item()}
 
@@ -52,6 +78,11 @@ def build_loss(config):
             alpha=config.get("alpha", 1.0),
             beta=config.get("beta", 1.0),
             gamma=config.get("gamma", 0.1)
+        )
+    elif model_name == "lynet":
+        return LYNetLoss(
+            alpha=config.get("alpha", 1.0),
+            beta=config.get("beta", 1.0)
         )
     else:
         # 其他 Baseline (如 UNet 等) 的普通 Loss
