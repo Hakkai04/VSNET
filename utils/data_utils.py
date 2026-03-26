@@ -22,7 +22,7 @@ def get_transforms(config):
     model_name = config.get("model_name", "vsnet").lower()
 
     # 根据模型决定加载哪些键
-    if model_name == "vsnet":
+    if model_name in ["vsnet", "lynet"]:
         keys = ["image", "label", "edge", "reg"]
         modes = ("bilinear", "nearest", "nearest", "bilinear")
     else:
@@ -84,7 +84,7 @@ def get_dataloader(config):
     def parse_files(file_list):
         parsed = []
         for item in file_list:
-            if model_name == "vsnet":
+            if model_name in ["vsnet", "lynet"]:
                 parsed.append({
                     "image": os.path.normpath(os.path.join(data_dir, item["image"])),
                     "label": os.path.normpath(os.path.join(data_dir, item["label"])),
