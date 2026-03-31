@@ -12,7 +12,7 @@
 
 - 包含303个CT卷，以2mm层厚为阈值将原始数据集划分为Thin-slice(层厚 < 2mm)和Thick-slice(层厚 > 2mm), 分别为61例和242例。
 
-- (PS：VSNet论文仅用Thin-slice验证模型方法有效性)
+- (PS：仅用Thin-slice验证模型方法有效性)
 
 #### 关于本实验数据集dataset
 
@@ -26,7 +26,3 @@ dataset里目前包含imagesTr、labelsTr、preprocessed
 
 - reg : 中心线距离回归图 ($M_d$)
 - edge : 扩展边缘掩码 ($C_{exp}$) / 轮廓图
-
-#### 后期可能工作（关于数据集
-
-1. 需要根据 CT 的层厚属性筛选出那 61 例用于特定的训练设置

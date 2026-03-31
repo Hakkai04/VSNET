@@ -8,14 +8,12 @@
 d:\VSNet-main\
 ├── config.yaml          # 全局超参数与配置文件
 ├── scripts\             # 可执行脚本目录
-│   └── train.py         # 统一的主训练脚本
+│   ├── train.py         # 统一的主训练脚本
+│   └── resume.py        # 恢复训练脚本
 ├── dataset\             # 数据集相关目录
 ├── models\              # 核心网络架构定义目录
 │   ├── __init__.py      # 模型工厂 (Model Factory)
-│   ├── VSNet.py         # 现有的 VSNet 主干
-│   ├── unet.py          # 基于 MONAI 构建的标准 U-Net
-│   ├── vnet.py          # 基于带残差版 U-Net 构建的 VNet
-│   └── attention_unet.py# 基于 MONAI 构建的 Attention U-Net
+│   └── VSNet.py         # 现有的 VSNet 主干
 └── utils\               # 核心训练系统工具箱
     ├── __init__.py
     ├── data_utils.py    # 数据加载 (DataLoader) 与增强编排 (Transforms)
