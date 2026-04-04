@@ -49,13 +49,13 @@ class Trainer:
         self.patch_size = tuple(patch_size) if isinstance(patch_size, list) else patch_size
         
         self.dice_metric = DiceMetric(include_background=False, reduction="mean_batch", get_not_nans=False)
-        self.hd95_metric = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch", get_not_nans=False)
-        self.conf_matrix_metric = ConfusionMatrixMetric(
-            include_background=False, 
-            metric_name=["precision", "sensitivity"], 
-            reduction="mean_batch", 
-            get_not_nans=False
-        )
+        # self.hd95_metric = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch", get_not_nans=False)
+        # self.conf_matrix_metric = ConfusionMatrixMetric(
+        #     include_background=False, 
+        #     metric_name=["precision", "sensitivity"], 
+        #     reduction="mean_batch", 
+        #     get_not_nans=False
+        # )
         self.best_dice = -1.0
         self.best_epoch = -1
         self.patience = config.get("patience", 2000)
@@ -138,7 +138,7 @@ class Trainer:
                     val_outputs = sliding_window_inference(
                         inputs=val_inputs, 
                         roi_size=self.patch_size, 
-                        sw_batch_size=4, 
+                        sw_batch_size=8, 
                         predictor=self.model,
                         overlap=0.5
                     )
@@ -164,8 +164,8 @@ class Trainer:
                 val_outputs_onehot = AsDiscrete(argmax=True, to_onehot=3, dim=1)(val_outputs)
                 val_labels_onehot = AsDiscrete(to_onehot=3, dim=1)(val_labels)
                 self.dice_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
-                self.hd95_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
-                self.conf_matrix_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
+                # self.hd95_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
+                # self.conf_matrix_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
 
             dice_score = self.dice_metric.aggregate()
             dice_hv = dice_score[0].item()
@@ -173,39 +173,39 @@ class Trainer:
             mean_dice = torch.nanmean(dice_score).item()
             self.dice_metric.reset()
 
-            hd95_score = self.hd95_metric.aggregate()
-            hd95_hv = hd95_score[0].item()
-            hd95_pv = hd95_score[1].item()
-            mean_hd95 = torch.nanmean(hd95_score).item()
-            self.hd95_metric.reset()
+            # hd95_score = self.hd95_metric.aggregate()
+            # hd95_hv = hd95_score[0].item()
+            # hd95_pv = hd95_score[1].item()
+            # mean_hd95 = torch.nanmean(hd95_score).item()
+            # self.hd95_metric.reset()
 
-            conf_metrics = self.conf_matrix_metric.aggregate()
-            if isinstance(conf_metrics, (tuple, list)):
-                precision_hv = conf_metrics[0][0].item()
-                precision_pv = conf_metrics[0][1].item()
-                sensitivity_hv = conf_metrics[1][0].item()
-                sensitivity_pv = conf_metrics[1][1].item()
-                precision_score = torch.nanmean(conf_metrics[0]).item()
-                sensitivity_score = torch.nanmean(conf_metrics[1]).item()
-            else:
-                precision_hv = conf_metrics[0].item()
-                precision_pv = conf_metrics[1].item()
-                sensitivity_hv = 0.0
-                sensitivity_pv = 0.0
-                precision_score = torch.nanmean(conf_metrics).item()
-                sensitivity_score = 0.0
-            self.conf_matrix_metric.reset()
+            # conf_metrics = self.conf_matrix_metric.aggregate()
+            # if isinstance(conf_metrics, (tuple, list)):
+            #     precision_hv = conf_metrics[0][0].item()
+            #     precision_pv = conf_metrics[0][1].item()
+            #     sensitivity_hv = conf_metrics[1][0].item()
+            #     sensitivity_pv = conf_metrics[1][1].item()
+            #     precision_score = torch.nanmean(conf_metrics[0]).item()
+            #     sensitivity_score = torch.nanmean(conf_metrics[1]).item()
+            # else:
+            #     precision_hv = conf_metrics[0].item()
+            #     precision_pv = conf_metrics[1].item()
+            #     sensitivity_hv = 0.0
+            #     sensitivity_pv = 0.0
+            #     precision_score = torch.nanmean(conf_metrics).item()
+            #     sensitivity_score = 0.0
+            # self.conf_matrix_metric.reset()
 
             self.logger.info(
-                f"\nEpoch {epoch} | Val Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}\n"
-                f"        | Val Mean 95HD: {mean_hd95:.4f} | HV: {hd95_hv:.4f} | PV: {hd95_pv:.4f}\n"
-                f"        | Val Mean Prec: {precision_score:.4f} | HV: {precision_hv:.4f} | PV: {precision_pv:.4f}\n"
-                f"        | Val Mean Sens: {sensitivity_score:.4f} | HV: {sensitivity_hv:.4f} | PV: {sensitivity_pv:.4f}"
+                f"\nEpoch {epoch} | Val Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}"
+                # f"\n        | Val Mean 95HD: {mean_hd95:.4f} | HV: {hd95_hv:.4f} | PV: {hd95_pv:.4f}\n"
+                # f"        | Val Mean Prec: {precision_score:.4f} | HV: {precision_hv:.4f} | PV: {precision_pv:.4f}\n"
+                # f"        | Val Mean Sens: {sensitivity_score:.4f} | HV: {sensitivity_hv:.4f} | PV: {sensitivity_pv:.4f}"
             )
             self.writer.add_scalar("Val/Mean_Dice", mean_dice, epoch)
-            self.writer.add_scalar("Val/Mean_95HD", mean_hd95, epoch)
-            self.writer.add_scalar("Val/Mean_Precision", precision_score, epoch)
-            self.writer.add_scalar("Val/Mean_Sensitivity", sensitivity_score, epoch)
+            # self.writer.add_scalar("Val/Mean_95HD", mean_hd95, epoch)
+            # self.writer.add_scalar("Val/Mean_Precision", precision_score, epoch)
+            # self.writer.add_scalar("Val/Mean_Sensitivity", sensitivity_score, epoch)
 
             if mean_dice > self.best_dice:
                 self.best_dice = mean_dice
