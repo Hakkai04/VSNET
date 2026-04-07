@@ -78,19 +78,26 @@ class SoftClDiceLoss3D(nn.Module):
 
 
 class CombinedLoss(nn.Module):
-    def __init__(self, alpha=0.5, iter_=3):
+    def __init__(self, alpha=0.5, iter_=3, warmup_epochs=500):
         super().__init__()
         self.alpha = alpha
+        self.warmup_epochs = warmup_epochs
         self.dice_ce = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
         self.cldice = SoftClDiceLoss3D(iter_=iter_)
 
     def forward(self, outputs, targets):
         labels = targets["label"]
+        epoch = targets.get("epoch", 1)  # 获取当前 epoch
 
         if isinstance(outputs, (tuple, list)):
             outputs = outputs[0]
 
         loss_dice_ce = self.dice_ce(outputs, labels)
+
+        # 缓冲机制：前 warmup_epochs 轮只使用 dice_ce，不计算 cldice
+        if epoch <= self.warmup_epochs:
+            loss = loss_dice_ce
+            return loss, {"dice_ce": loss_dice_ce.item(), "cldice": 0.0, "total": loss.item()}
 
         probs = F.softmax(outputs, dim=1)
         labels_onehot = F.one_hot(labels.squeeze(1).long(), num_classes=outputs.shape[1]).permute(0, 4, 1, 2, 3).float()

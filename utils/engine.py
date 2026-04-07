@@ -76,6 +76,7 @@ class Trainer:
             # 准备数据，不同模型需要的数据在 Transforms 阶段已准备好
             inputs = batch_data["image"].to(self.device, non_blocking=True)
             targets = {k: v.to(self.device, non_blocking=True) for k, v in batch_data.items() if k != "image"}
+            targets["epoch"] = epoch  # 传入 epoch 以支持 Loss 缓冲机制
 
             with torch.amp.autocast('cuda'):
                 outputs = self.model(inputs)
