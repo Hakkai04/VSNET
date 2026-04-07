@@ -1,0 +1,24 @@
+# Project Structure
+project: "runs/train"
+name: "unet_cv"
+model_name: "unet"
+data_dir: "./dataset"
+dataset_json: "dataset_full_thin.json"
+
+# Training Hyperparameters
+k_folds: 5
+max_epochs: 10000
+patience: 1000
+val_interval: 5
+batch_size: 2
+target_batch_size: 16
+lr: 0.0001
+weight_decay: 0.0001
+patch_size: [96, 96, 96]
+num_samples: 4
+
+# Data Normalization
+a_min: 0.0
+a_max: 200.0
+b_min: 0.0
+b_max: 1.0
