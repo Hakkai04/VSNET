@@ -49,6 +49,7 @@ class Trainer:
         self.patch_size = tuple(patch_size) if isinstance(patch_size, list) else patch_size
         
         self.dice_metric = DiceMetric(include_background=False, reduction="mean_batch", get_not_nans=False)
+        self.dice_metric_raw = DiceMetric(include_background=False, reduction="mean_batch", get_not_nans=False)
         # self.hd95_metric = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch", get_not_nans=False)
         # self.conf_matrix_metric = ConfusionMatrixMetric(
         #     include_background=False, 
@@ -147,12 +148,23 @@ class Trainer:
                 if isinstance(val_outputs, tuple):
                     val_outputs = val_outputs[0]
                     
-                # 可视化第一张图
+                from monai.transforms import KeepLargestConnectedComponent
+                post_processor = KeepLargestConnectedComponent(applied_labels=[1, 2], independent=True)
+                
+                # 取出类别索引并进行最大连通域过滤后处理
+                val_preds_argmax = torch.argmax(val_outputs, dim=1, keepdim=True)
+                val_outputs_post = []
+                for p in val_preds_argmax:
+                    p_clean = post_processor(p)
+                    val_outputs_post.append(p_clean)
+                val_outputs_post = torch.stack(val_outputs_post, dim=0)
+
+                # 可视化第一张图 (使用过滤后的预测结果)
                 if i == 0:
                     slice_idx = val_inputs.shape[-1] // 2
                     img_show = val_inputs[0, 0, :, :, slice_idx].cpu().numpy()
                     lbl_show = val_labels[0, 0, :, :, slice_idx].cpu().numpy()
-                    pred_show = torch.argmax(val_outputs, dim=1)[0, :, :, slice_idx].detach().cpu().numpy()
+                    pred_show = val_outputs_post[0, 0, :, :, slice_idx].detach().cpu().numpy()
 
                     plt.figure(figsize=(12, 4), dpi=100)
                     plt.subplot(1, 3, 1); plt.imshow(img_show, cmap="gray"); plt.title("Image"); plt.axis('off')
@@ -161,9 +173,13 @@ class Trainer:
                     plt.savefig(os.path.join(vis_dir, f"epoch_{epoch}_check.png"))
                     plt.close()
 
-                val_outputs_onehot = AsDiscrete(argmax=True, to_onehot=3, dim=1)(val_outputs)
+                val_outputs_onehot = AsDiscrete(to_onehot=3, dim=1)(val_outputs_post)
                 val_labels_onehot = AsDiscrete(to_onehot=3, dim=1)(val_labels)
                 self.dice_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
+                
+                # 原始未经连通域处理的预测，用于对比
+                val_outputs_raw_onehot = AsDiscrete(argmax=True, to_onehot=3, dim=1)(val_outputs)
+                self.dice_metric_raw(y_pred=val_outputs_raw_onehot, y=val_labels_onehot)
                 # self.hd95_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
                 # self.conf_matrix_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
 
@@ -172,6 +188,12 @@ class Trainer:
             dice_pv = dice_score[1].item()
             mean_dice = torch.nanmean(dice_score).item()
             self.dice_metric.reset()
+
+            raw_dice_score = self.dice_metric_raw.aggregate()
+            raw_dice_hv = raw_dice_score[0].item()
+            raw_dice_pv = raw_dice_score[1].item()
+            raw_mean_dice = torch.nanmean(raw_dice_score).item()
+            self.dice_metric_raw.reset()
 
             # hd95_score = self.hd95_metric.aggregate()
             # hd95_hv = hd95_score[0].item()
@@ -197,12 +219,11 @@ class Trainer:
             # self.conf_matrix_metric.reset()
 
             self.logger.info(
-                f"\nEpoch {epoch} | Val Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}"
-                # f"\n        | Val Mean 95HD: {mean_hd95:.4f} | HV: {hd95_hv:.4f} | PV: {hd95_pv:.4f}\n"
-                # f"        | Val Mean Prec: {precision_score:.4f} | HV: {precision_hv:.4f} | PV: {precision_pv:.4f}\n"
-                # f"        | Val Mean Sens: {sensitivity_score:.4f} | HV: {sensitivity_hv:.4f} | PV: {sensitivity_pv:.4f}"
+                f"\nEpoch {epoch} | [Raw] Mean Dice: {raw_mean_dice:.4f} | HV: {raw_dice_hv:.4f} | PV: {raw_dice_pv:.4f}\n"
+                f"        | [Clean] Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}"
             )
-            self.writer.add_scalar("Val/Mean_Dice", mean_dice, epoch)
+            self.writer.add_scalar("Val/Mean_Dice_Clean", mean_dice, epoch)
+            self.writer.add_scalar("Val/Mean_Dice_Raw", raw_mean_dice, epoch)
             # self.writer.add_scalar("Val/Mean_95HD", mean_hd95, epoch)
             # self.writer.add_scalar("Val/Mean_Precision", precision_score, epoch)
             # self.writer.add_scalar("Val/Mean_Sensitivity", sensitivity_score, epoch)
