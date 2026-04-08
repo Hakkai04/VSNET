@@ -1,5 +1,6 @@
 import torch
 from .VSNet import VSNet
+from .cga_unet import CGAUNet3D
 from monai.networks.nets import UNet, AttentionUnet
 
 def build_model(config, device="cpu"):
@@ -46,6 +47,12 @@ def build_model(config, device="cpu"):
             out_channels=3,
             channels=(32, 64, 128, 256, 512),
             strides=(2, 2, 2, 2),
+        )
+    elif name == "cga_unet":
+        model = CGAUNet3D(
+            in_channels=1,
+            num_classes=3,
+            features=(32, 64, 128, 256, 512)
         )
     else:
         raise ValueError(f"Unknown model_name: {name}")

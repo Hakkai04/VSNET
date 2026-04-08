@@ -1,0 +1,29 @@
+# Project Structure
+project: "runs/train"
+name: "cga_unet_training"
+model_name: "cga_unet"
+data_dir: "./dataset"
+dataset_json: "dataset_full_thin.json"
+
+# Training Hyperparameters
+max_epochs: 1000
+patience: 300
+val_interval: 5
+batch_size: 2
+target_batch_size: 16
+lr: 0.0001
+weight_decay: 0.0001
+patch_size: [96, 96, 96]
+num_samples: 4
+
+# Multi-Task Loss Weights (CGALoss)
+alpha: 1.0  # Weight for Mask Loss (Dice + CE)
+beta: 1.0   # Weight for Centerline Loss (Focal Loss)
+gamma: 0.5  # Weight for Topology Loss (Soft clDice)
+warmup_epochs: 50 # Epoch to start calculating Soft clDice (0 means calculate immediately)
+
+# Data Normalization
+a_min: 0.0
+a_max: 200.0
+b_min: 0.0
+b_max: 1.0

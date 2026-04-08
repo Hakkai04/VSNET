@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from monai.losses import DiceCELoss
+from monai.losses import DiceCELoss, FocalLoss
 
 class VSNetLoss(nn.Module):
     def __init__(self, alpha=1.0, beta=1.0, gamma=0.1):
@@ -108,6 +108,45 @@ class CombinedLoss(nn.Module):
 
         return loss, {"dice_ce": loss_dice_ce.item(), "cldice": loss_cldice.item(), "total": loss.item()}
 
+class CGALoss(nn.Module):
+    def __init__(self, alpha=1.0, beta=1.0, gamma=0.1, iter_=3, warmup_epochs=0):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.warmup_epochs = warmup_epochs
+        
+        # Supervise Mask
+        self.loss_mask = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
+        # Supervise Centerline (extreme imbalance, better handled by FocalLoss)
+        self.loss_centerline = FocalLoss(include_background=False, to_onehot_y=True, use_softmax=True)
+        # Structural Loss
+        self.cldice = SoftClDiceLoss3D(iter_=iter_)
+
+    def forward(self, outputs, targets):
+        pred_mask, pred_centerline = outputs
+        labels = targets["label"]
+        centerline_gt = targets.get("centerline", None)
+        epoch = targets.get("epoch", 1)
+
+        l_mask = self.loss_mask(pred_mask, labels)
+        
+        if centerline_gt is not None:
+            l_centerline = self.loss_centerline(pred_centerline, centerline_gt)
+        else:
+            l_centerline = torch.tensor(0.0).to(pred_mask.device)
+
+        if epoch <= self.warmup_epochs:
+            l_cldice = torch.tensor(0.0).to(pred_mask.device)
+        else:
+            probs = F.softmax(pred_mask, dim=1)
+            labels_onehot = F.one_hot(labels.squeeze(1).long(), num_classes=pred_mask.shape[1]).permute(0, 4, 1, 2, 3).float()
+            l_cldice = self.cldice(labels_onehot, probs)
+
+        loss = self.alpha * l_mask + self.beta * l_centerline + self.gamma * l_cldice
+
+        return loss, {"mask": self.alpha * l_mask.item(), "centerline": self.beta * l_centerline.item(), "cldice": self.gamma * l_cldice.item(), "total": loss.item()}
+
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
         super().__init__()
@@ -133,6 +172,14 @@ def build_loss(config):
         return CombinedLoss(
             alpha=config.get("alpha", 0.5),
             iter_=3
+        )
+    elif model_name == "cga_unet":
+        return CGALoss(
+            alpha=config.get("alpha", 1.0),
+            beta=config.get("beta", 1.0),
+            gamma=config.get("gamma", 0.5),
+            iter_=3,
+            warmup_epochs=config.get("warmup_epochs", 0)
         )
     else:
         # 其他 Baseline (如 UNet 等) 的普通 Loss

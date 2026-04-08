@@ -8,7 +8,7 @@ def generate_thin_dataset_json(
     images_dir="imagesTr",
     labels_dir="labelsTr",
     edges_dir="preprocessed/edge",
-    centerlines_dir="preprocessed/reg",
+    centerlines_dir="preprocessed/centerline_gt",
     output_file="dataset_full_thin.json", # 输出为薄层专用json
     thickness_threshold=2.0 # 论文 Table 1 定义 Thin 为 [0.8, 2]
 ):

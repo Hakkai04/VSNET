@@ -60,6 +60,11 @@ class Trainer:
         self.best_dice = -1.0
         self.best_epoch = -1
         self.patience = config.get("patience", 2000)
+        
+        from monai.metrics import HausdorffDistanceMetric
+        self.hd95_metric = HausdorffDistanceMetric(include_background=False, percentile=95, reduction="mean_batch", get_not_nans=False)
+        from utils.losses import SoftClDiceLoss3D
+        self.cldice_calc = SoftClDiceLoss3D() # Loss value is 1 - SoftClDice, so Score = 1 - Loss
 
     def train_one_epoch(self, epoch):
         self.model.train()
@@ -145,22 +150,15 @@ class Trainer:
                         overlap=0.5
                     )
                 
-                # VSNet 的推理有时返回单个元组，需要解析
+                # Unwrap if model returns tuple in eval mode (though CGAUNet3D only returns mask in eval)
                 if isinstance(val_outputs, tuple):
                     val_outputs = val_outputs[0]
                     
-                from monai.transforms import KeepLargestConnectedComponent
-                post_processor = KeepLargestConnectedComponent(applied_labels=[1, 2], independent=True)
-                
-                # 取出类别索引并进行最大连通域过滤后处理
+                # We removed KeepLargestConnectedComponent directly using argmax
                 val_preds_argmax = torch.argmax(val_outputs, dim=1, keepdim=True)
-                val_outputs_post = []
-                for p in val_preds_argmax:
-                    p_clean = post_processor(p)
-                    val_outputs_post.append(p_clean)
-                val_outputs_post = torch.stack(val_outputs_post, dim=0)
+                val_outputs_post = val_preds_argmax # no component dropping
 
-                # 可视化第一张图 (使用过滤后的预测结果)
+                # Visualization (first batch only)
                 if i == 0:
                     slice_idx = val_inputs.shape[-1] // 2
                     img_show = val_inputs[0, 0, :, :, slice_idx].cpu().numpy()
@@ -174,60 +172,36 @@ class Trainer:
                     plt.savefig(os.path.join(vis_dir, f"epoch_{epoch}_check.png"))
                     plt.close()
 
+                # Metric Computation (One-hot encoding)
                 val_outputs_onehot = AsDiscrete(to_onehot=3, dim=1)(val_outputs_post)
                 val_labels_onehot = AsDiscrete(to_onehot=3, dim=1)(val_labels)
+                
                 self.dice_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
                 
-                # 原始未经连通域处理的预测，用于对比
-                val_outputs_raw_onehot = AsDiscrete(argmax=True, to_onehot=3, dim=1)(val_outputs)
-                self.dice_metric_raw(y_pred=val_outputs_raw_onehot, y=val_labels_onehot)
-                # self.hd95_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
-                # self.conf_matrix_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
+                # Compute clDice using SoftClDiceLoss3D
+                probs = F.softmax(val_outputs, dim=1)
+                labels_onehot_float = F.one_hot(val_labels.squeeze(1).long(), num_classes=val_outputs.shape[1]).permute(0, 4, 1, 2, 3).float()
+                cldice_loss = self.cldice_calc(labels_onehot_float, probs)
+                cldice_score = 1.0 - cldice_loss.item()
+                if not hasattr(self, 'epoch_cldice_list'):
+                    self.epoch_cldice_list = []
+                self.epoch_cldice_list.append(cldice_score)
 
+            # DICE Aggregate
             dice_score = self.dice_metric.aggregate()
             dice_hv = dice_score[0].item()
             dice_pv = dice_score[1].item()
             mean_dice = torch.nanmean(dice_score).item()
             self.dice_metric.reset()
 
-            raw_dice_score = self.dice_metric_raw.aggregate()
-            raw_dice_hv = raw_dice_score[0].item()
-            raw_dice_pv = raw_dice_score[1].item()
-            raw_mean_dice = torch.nanmean(raw_dice_score).item()
-            self.dice_metric_raw.reset()
-
-            # hd95_score = self.hd95_metric.aggregate()
-            # hd95_hv = hd95_score[0].item()
-            # hd95_pv = hd95_score[1].item()
-            # mean_hd95 = torch.nanmean(hd95_score).item()
-            # self.hd95_metric.reset()
-
-            # conf_metrics = self.conf_matrix_metric.aggregate()
-            # if isinstance(conf_metrics, (tuple, list)):
-            #     precision_hv = conf_metrics[0][0].item()
-            #     precision_pv = conf_metrics[0][1].item()
-            #     sensitivity_hv = conf_metrics[1][0].item()
-            #     sensitivity_pv = conf_metrics[1][1].item()
-            #     precision_score = torch.nanmean(conf_metrics[0]).item()
-            #     sensitivity_score = torch.nanmean(conf_metrics[1]).item()
-            # else:
-            #     precision_hv = conf_metrics[0].item()
-            #     precision_pv = conf_metrics[1].item()
-            #     sensitivity_hv = 0.0
-            #     sensitivity_pv = 0.0
-            #     precision_score = torch.nanmean(conf_metrics).item()
-            #     sensitivity_score = 0.0
-            # self.conf_matrix_metric.reset()
+            mean_cldice = sum(self.epoch_cldice_list) / max(len(self.epoch_cldice_list), 1)
+            self.epoch_cldice_list = []
 
             self.logger.info(
-                f"\nEpoch {epoch} | [Raw] Mean Dice: {raw_mean_dice:.4f} | HV: {raw_dice_hv:.4f} | PV: {raw_dice_pv:.4f}\n"
-                f"        | [Clean] Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f}"
+                f"\nEpoch {epoch} | Mean Dice: {mean_dice:.4f} | HV: {dice_hv:.4f} | PV: {dice_pv:.4f} | clDice: {mean_cldice:.4f}"
             )
-            self.writer.add_scalar("Val/Mean_Dice_Clean", mean_dice, epoch)
-            self.writer.add_scalar("Val/Mean_Dice_Raw", raw_mean_dice, epoch)
-            # self.writer.add_scalar("Val/Mean_95HD", mean_hd95, epoch)
-            # self.writer.add_scalar("Val/Mean_Precision", precision_score, epoch)
-            # self.writer.add_scalar("Val/Mean_Sensitivity", sensitivity_score, epoch)
+            self.writer.add_scalar("Val/Mean_Dice", mean_dice, epoch)
+            self.writer.add_scalar("Val/Mean_clDice", mean_cldice, epoch)
 
             if mean_dice > self.best_dice:
                 self.best_dice = mean_dice
@@ -265,11 +239,58 @@ class Trainer:
                     self.logger.info(f"⚠️ Early stopping triggered! No improvement in {self.patience} epochs.")
                     break
                 
-            # 清理当前 epoch 产生的未引用显存和内存垃圾
-            # 避免 fork 子进程时继承悬空 CUDA Tensor 引发 'c10::AcceleratorError' 崩溃
+            # 处理内存
             import gc
             gc.collect()
             torch.cuda.empty_cache()
                 
         self.logger.info(f"\n🎉 Training completed. Best Dice: {self.best_dice:.4f} at epoch {self.best_epoch}")
+        
+        # Finally, Evaluate Best Model on HD95 Metric
+        self._evaluate_best_model_hd95()
+        
         self.writer.close()
+
+    def _evaluate_best_model_hd95(self):
+        best_path = os.path.join(self.weights_dir, "best.pth")
+        if not os.path.exists(best_path):
+            return
+            
+        self.logger.info(f"🔍 Loading Best Model from {best_path} to calculate HD95...")
+        self.model.load_state_dict(torch.load(best_path, map_location=self.device)['model_state_dict'])
+        self.model.eval()
+        self.hd95_metric.reset()
+
+        with torch.no_grad():
+            eval_tqdm = tqdm(self.val_loader, desc="HD95 Eval", leave=False)
+            for i, val_data in enumerate(eval_tqdm):
+                val_inputs = val_data["image"].to(self.device, non_blocking=True)
+                val_labels = val_data["label"].to(self.device, non_blocking=True)
+                
+                with torch.amp.autocast('cuda'):
+                    val_outputs = sliding_window_inference(
+                        inputs=val_inputs, 
+                        roi_size=self.patch_size, 
+                        sw_batch_size=8, 
+                        predictor=self.model,
+                        overlap=0.5
+                    )
+                if isinstance(val_outputs, tuple):
+                    val_outputs = val_outputs[0]
+                    
+                val_preds_argmax = torch.argmax(val_outputs, dim=1, keepdim=True)
+                val_outputs_onehot = AsDiscrete(to_onehot=3, dim=1)(val_preds_argmax)
+                val_labels_onehot = AsDiscrete(to_onehot=3, dim=1)(val_labels)
+                
+                # compute hd95
+                self.hd95_metric(y_pred=val_outputs_onehot, y=val_labels_onehot)
+
+        hd95_score = self.hd95_metric.aggregate()
+        hd95_hv = hd95_score[0].item()
+        hd95_pv = hd95_score[1].item()
+        mean_hd95 = torch.nanmean(hd95_score).item()
+        
+        self.logger.info(
+            f"🎯 Final Best Model Evaluation | Mean HD95: {mean_hd95:.4f} | HV: {hd95_hv:.4f} | PV: {hd95_pv:.4f}"
+        )
+        self.hd95_metric.reset()
