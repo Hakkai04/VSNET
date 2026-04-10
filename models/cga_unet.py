@@ -24,10 +24,13 @@ class CGAGate(nn.Module):
     """
     def __init__(self, in_channels_mask, in_channels_centerline, in_channels_x, inter_channels):
         super().__init__()
-        # W_g operates on the concatenated features of mask and centerline
+        # W_g operates on the concatenated features of mask and transformed centerline
         self.W_g = nn.Conv3d(in_channels_mask + in_channels_centerline, inter_channels, kernel_size=1, stride=1, padding=0, bias=True)
         # W_x operates on the encoder skip connection features
         self.W_x = nn.Conv3d(in_channels_x, inter_channels, kernel_size=1, stride=1, padding=0, bias=True)
+        
+        # Learnable Gaussian Decay parameter for Attention Probability transformation
+        self.alpha_c = nn.Parameter(torch.tensor(0.5))
         
         # psi maps to attention scores
         self.psi = nn.Sequential(
@@ -37,15 +40,16 @@ class CGAGate(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, g_mask, g_centerline, x):
-        # Align spatial dimensions if necessary (e.g. g_mask is typically smaller than x before upsampling in standard attention skip, 
-        # but usually in attention gate, g is upsampled to x's size or x is downsampled)
-        # Assuming g_mask and g_centerline have matching sizes. We upsample them to match x if needed.
         if g_mask.shape[2:] != x.shape[2:]:
             g_mask = F.interpolate(g_mask, size=x.shape[2:], mode="trilinear", align_corners=False)
             g_centerline = F.interpolate(g_centerline, size=x.shape[2:], mode="trilinear", align_corners=False)
             
+        # [Pitfall Protection] Gaussian Inversion: 
+        # Convert absolute distance-like spatial embeddings into properly scaled normalized probability-like Attention Fields
+        g_centerline_gaussian = torch.exp(-torch.abs(self.alpha_c) * g_centerline)
+            
         # Concat deep features from both decoders
-        g = torch.cat([g_mask, g_centerline], dim=1)
+        g = torch.cat([g_mask, g_centerline_gaussian], dim=1)
         
         # Linear transformations
         g1 = self.W_g(g)
@@ -115,7 +119,11 @@ class CGAUNet3D(nn.Module):
         self.c_up3 = UpBlock3D(features[3], features[2])
         self.c_up2 = UpBlock3D(features[2], features[1])
         self.c_up1 = UpBlock3D(features[1], features[0])
-        self.c_out = nn.Conv3d(features[0], num_classes, kernel_size=1)
+        # [Pitfall Protection] Output 1 Channel for absolute distance regression with appended ReLU to clamp to >= 0
+        self.c_out = nn.Sequential(
+            nn.Conv3d(features[0], 1, kernel_size=1),
+            nn.ReLU(inplace=True)
+        )
         
         # Mask Decoder (UpBlocks with CGA)
         self.m_up4 = UpBlockWithCGA(features[4], features[3])

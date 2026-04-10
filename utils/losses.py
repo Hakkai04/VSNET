@@ -118,8 +118,8 @@ class CGALoss(nn.Module):
         
         # Supervise Mask
         self.loss_mask = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
-        # Supervise Centerline (extreme imbalance, better handled by FocalLoss)
-        self.loss_centerline = FocalLoss(include_background=False, to_onehot_y=True, use_softmax=True)
+        # Supervise Centerline (T-EDT Continuous Spatial Regression)
+        self.loss_centerline = nn.MSELoss()
         # Structural Loss
         self.cldice = SoftClDiceLoss3D(iter_=iter_)
 
