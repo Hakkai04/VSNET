@@ -132,7 +132,10 @@ class CGALoss(nn.Module):
         l_mask = self.loss_mask(pred_mask, labels)
         
         if centerline_gt is not None:
-            l_centerline = self.loss_centerline(pred_centerline, centerline_gt)
+            # Normalize absolute distance [0, 10] to [0.0, 1.0] internal representation to match Dice scaling magnitude 
+            # and Sigmoid model output bounded activations.
+            normalized_centerline_gt = centerline_gt / 10.0
+            l_centerline = self.loss_centerline(pred_centerline, normalized_centerline_gt)
         else:
             l_centerline = torch.tensor(0.0).to(pred_mask.device)
 

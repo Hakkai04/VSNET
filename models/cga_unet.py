@@ -119,10 +119,10 @@ class CGAUNet3D(nn.Module):
         self.c_up3 = UpBlock3D(features[3], features[2])
         self.c_up2 = UpBlock3D(features[2], features[1])
         self.c_up1 = UpBlock3D(features[1], features[0])
-        # [Pitfall Protection] Output 1 Channel for absolute distance regression with appended ReLU to clamp to >= 0
+        # [Pitfall Protection] Output 1 Channel for absolute distance regression with Sigmoid to bound dynamically mapped [0, 1] T-EDT scale
         self.c_out = nn.Sequential(
             nn.Conv3d(features[0], 1, kernel_size=1),
-            nn.ReLU(inplace=True)
+            nn.Sigmoid()
         )
         
         # Mask Decoder (UpBlocks with CGA)

@@ -6,8 +6,8 @@ data_dir: "./dataset"
 dataset_json: "dataset_full_thin.json"
 
 # Training Hyperparameters
-max_epochs: 1000
-patience: 300
+max_epochs: 10000
+patience: 1000
 val_interval: 5
 batch_size: 2
 target_batch_size: 16
@@ -20,7 +20,7 @@ num_samples: 4
 alpha: 1.0  # Weight for Mask Loss (Dice + CE)
 beta: 1.0   # Weight for Centerline Loss (Focal Loss)
 gamma: 0.5  # Weight for Topology Loss (Soft clDice)
-warmup_epochs: 50 # Epoch to start calculating Soft clDice (0 means calculate immediately)
+warmup_epochs: 0 # Epoch to start calculating Soft clDice (0 means calculate immediately)
 
 # Data Normalization
 a_min: 0.0
