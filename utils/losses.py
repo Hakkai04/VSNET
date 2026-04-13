@@ -35,7 +35,7 @@ class VSNetLoss(nn.Module):
         return loss, {"seg": L_se.item(), "reg": L_cr.item(), "edge": L_ec.item()}
 
 class SoftClDiceLoss3D(nn.Module):
-    def __init__(self, iter_=3, smooth=1e-5):
+    def __init__(self, iter_=1, smooth=1e-5):
         super(SoftClDiceLoss3D, self).__init__()
         self.iter = iter_
         self.smooth = smooth
@@ -78,7 +78,7 @@ class SoftClDiceLoss3D(nn.Module):
 
 
 class CombinedLoss(nn.Module):
-    def __init__(self, alpha=0.5, iter_=3, warmup_epochs=500):
+    def __init__(self, alpha=0.5, iter_=1, warmup_epochs=500):
         super().__init__()
         self.alpha = alpha
         self.warmup_epochs = warmup_epochs
@@ -109,7 +109,7 @@ class CombinedLoss(nn.Module):
         return loss, {"dice_ce": loss_dice_ce.item(), "cldice": loss_cldice.item(), "total": loss.item()}
 
 class CGALoss(nn.Module):
-    def __init__(self, alpha=1.0, beta=1.0, gamma=0.1, iter_=3, warmup_epochs=0):
+    def __init__(self, alpha=1.0, beta=1.0, gamma=0.1, iter_=1, warmup_epochs=0):
         super().__init__()
         self.alpha = alpha
         self.beta = beta
@@ -174,14 +174,14 @@ def build_loss(config):
     elif model_name == "attention_unet":
         return CombinedLoss(
             alpha=config.get("alpha", 0.5),
-            iter_=3
+            iter_=1
         )
     elif model_name == "cga_unet":
         return CGALoss(
             alpha=config.get("alpha", 1.0),
             beta=config.get("beta", 1.0),
             gamma=config.get("gamma", 0.5),
-            iter_=3,
+            iter_=1,
             warmup_epochs=config.get("warmup_epochs", 0)
         )
     else:

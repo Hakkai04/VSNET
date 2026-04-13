@@ -110,18 +110,19 @@ def get_dataloader(config):
     train_files = parse_files(data_json.get("training", []))
     val_files = parse_files(data_json.get("validation", []))
 
-    # 根据要求："请将数据集按 4:1 的比例随机划分为训练集和测试集 （Hold-out validation 策略）"
-    # 我们合并所有数据并进行固定随机种子的 4:1 划分
-    all_files = train_files + val_files
-    random.seed(42)  # 严格使用固定种子打乱
-    random.shuffle(all_files)
-    
-    # 4:1 划分即 80% 训练集, 20% 测试/验证集
-    split_idx = int(len(all_files) * 0.8)
-    train_files = all_files[:split_idx]
-    val_files = all_files[split_idx:]
-
-    logger.info(f"Hold-out Validation Strategy (4:1 split) -> Train samples: {len(train_files)}, Val/Test samples: {len(val_files)}")
+    # If the json explicitly provides a validation split (e.g., our generated _aug json), respect it natively.
+    if len(val_files) > 0:
+        logger.info(f"Explicit Dataset Split detected -> Train samples: {len(train_files)}, Val/Test samples: {len(val_files)}")
+    else:
+        # According to standard protocol, dynamically perform robust 4:1 Hold-out validation
+        all_files = train_files
+        random.seed(42)  # Fixed seed shuffle to preserve identity map
+        random.shuffle(all_files)
+        
+        split_idx = int(len(all_files) * 0.8)
+        train_files = all_files[:split_idx]
+        val_files = all_files[split_idx:]
+        logger.info(f"Dynamic Hold-out Strategy (4:1 split) -> Train samples: {len(train_files)}, Val/Test samples: {len(val_files)}")
 
     train_transforms, val_transforms = get_transforms(config)
 
