@@ -78,11 +78,31 @@ class SoftClDiceLoss3D(nn.Module):
 
 
 class CombinedLoss(nn.Module):
-    def __init__(self, alpha=0.5, iter_=3):
+    def __init__(self, target_alpha=0.5, warmup_epochs=0, anneal_epochs=0, iter_=3):
         super().__init__()
-        self.alpha = alpha
+        self.target_alpha = target_alpha
+        self.warmup_epochs = warmup_epochs
+        self.anneal_epochs = anneal_epochs
+        
+        # 如果设置了预热，则初始 alpha 强制为 1.0 (纯 DiceCE)，否则直接使用 target_alpha
+        self.current_alpha = 1.0 if (warmup_epochs > 0 or anneal_epochs > 0) else target_alpha
+        
         self.dice_ce = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
         self.cldice = SoftClDiceLoss3D(iter_=iter_)
+
+    def update_alpha(self, current_epoch):
+        if self.warmup_epochs == 0 and self.anneal_epochs == 0:
+            self.current_alpha = self.target_alpha
+            return
+            
+        if current_epoch <= self.warmup_epochs:
+            self.current_alpha = 1.0
+        elif current_epoch <= self.warmup_epochs + self.anneal_epochs:
+            progress = (current_epoch - self.warmup_epochs) / self.anneal_epochs
+            # 线性衰减：从 1.0 到 target_alpha
+            self.current_alpha = 1.0 - progress * (1.0 - self.target_alpha)
+        else:
+            self.current_alpha = self.target_alpha
 
     def forward(self, outputs, targets):
         labels = targets["label"]
@@ -97,9 +117,10 @@ class CombinedLoss(nn.Module):
         
         loss_cldice = self.cldice(labels_onehot, probs)
 
-        loss = self.alpha * loss_dice_ce + (1.0 - self.alpha) * loss_cldice
+        loss = self.current_alpha * loss_dice_ce + (1.0 - self.current_alpha) * loss_cldice
 
-        return loss, {"dice_ce": loss_dice_ce.item(), "cldice": loss_cldice.item(), "total": loss.item()}
+        # 返回时将当前 alpha 加入日志，以便观察衰减过程
+        return loss, {"dice_ce": loss_dice_ce.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
 
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
@@ -124,7 +145,9 @@ def build_loss(config):
         )
     elif model_name == "attention_unet":
         return CombinedLoss(
-            alpha=config.get("alpha", 0.5),
+            target_alpha=config.get("alpha", 0.5),
+            warmup_epochs=config.get("warmup_epochs", 50),
+            anneal_epochs=config.get("anneal_epochs", 50),
             iter_=3
         )
     else:

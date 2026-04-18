@@ -11,18 +11,20 @@ patience: 1000
 val_interval: 5
 batch_size: 4
 target_batch_size: 16
-lr: 0.0001
-weight_decay: 0.0001
+lr: 0.001
+weight_decay: 0.00001
 patch_size: [96, 96, 96]
 num_samples: 4
 
 # Loss Weights
-alpha: 0.5  # Weight for CombinedLoss (DiceCE portion)
-beta: 1.0   # Weight for edge segmentation (L_ec)
-gamma: 0.1  # Weight for deep supervision (L_deep)
+alpha: 0.5  # Final Weight for CombinedLoss (DiceCE portion) after warmup
+warmup_epochs: 50 # 预热轮数：这期间仅使用纯 DiceCE 训练
+anneal_epochs: 50 # 衰减轮数：这期间 alpha 从 1.0 平滑过渡到目标 alpha
+# beta: 1.0   # Weight for edge segmentation (L_ec)
+# gamma: 0.1  # Weight for deep supervision (L_deep)
 
 # Data Normalization
-a_min: 0.0
-a_max: 200.0
+a_min: -200.0
+a_max: 250.0
 b_min: 0.0
 b_max: 1.0
