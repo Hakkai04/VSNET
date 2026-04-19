@@ -1,6 +1,6 @@
 import torch
 from .VSNet import VSNet
-from monai.networks.nets import UNet, AttentionUnet
+from monai.networks.nets import UNet, AttentionUnet, SwinUNETR
 
 def build_model(config, device="cpu"):
     name = config.get("model_name", "vsnet").lower()
@@ -46,6 +46,14 @@ def build_model(config, device="cpu"):
             out_channels=3,
             channels=(32, 64, 128, 256, 512),
             strides=(2, 2, 2, 2),
+        )
+    elif name == "swin_unetr":
+        model = SwinUNETR(
+            img_size=patch_size,
+            in_channels=1,
+            out_channels=3,
+            feature_size=48,
+            use_checkpoint=True
         )
     else:
         raise ValueError(f"Unknown model_name: {name}")

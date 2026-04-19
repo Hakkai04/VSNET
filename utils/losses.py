@@ -144,7 +144,7 @@ def build_loss(config):
             beta=config.get("beta", 1.0),
             gamma=config.get("gamma", 0.1)
         )
-    elif model_name == "attention_unet":
+    elif model_name in ["attention_unet", "swin_unetr"]:
         return CombinedLoss(
             target_alpha=config.get("alpha", 0.5),
             warmup_epochs=config.get("warmup_epochs", 50),

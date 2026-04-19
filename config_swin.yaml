@@ -1,0 +1,28 @@
+# Project Structure
+project: "runs/train"
+name: "swin_unetr_cldice"
+model_name: "swin_unetr"
+data_dir: "./dataset"
+dataset_json: "dataset_full_thin.json"
+
+# Training Hyperparameters
+max_epochs: 10000
+patience: 1000
+val_interval: 5
+batch_size: 2
+target_batch_size: 16
+lr: 0.001           # Swin-UNETR 从头训练需要标准的 0.001 学习率
+weight_decay: 0.00001
+patch_size: [96, 96, 96]
+num_samples: 4
+
+# Loss Weights (使用与 0.824 相同的 Tversky(0.3, 0.7) + clDice 配置)
+alpha: 0.5           # Final Weight for CombinedLoss (Tversky portion) after warmup
+warmup_epochs: 50    # 对于 Transformer，前 50 epoch 纯 Tversky 预热非常重要
+anneal_epochs: 50    # 50 epoch 平滑拉升 clDice
+
+# Data Normalization
+a_min: -200.0
+a_max: 250.0
+b_min: 0.0
+b_max: 1.0
