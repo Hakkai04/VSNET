@@ -12,8 +12,9 @@ from monai.transforms import AsDiscrete, KeepLargestConnectedComponent
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.data_utils import get_dataloader
 from models import build_model
+from utils.data_utils import get_dataloader
+from monai.utils import set_determinism
 from utils.losses import SoftClDiceLoss3D
 
 def main():
@@ -31,6 +32,20 @@ def main():
         config = yaml.safe_load(f)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 0. 固定全局随机种子与底层 CuDNN，确保推理图对齐 engine.py
+    seed = 42
+    import random
+    import numpy as np
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    set_determinism(seed=seed)
 
     # 1. 严格按照训练集的划分方式挂载数据 (固定 seed 导致划分必与之前一致)
     _, val_loader = get_dataloader(config)
@@ -112,7 +127,8 @@ def main():
             # 加入连通域过滤后处理
             preds_post = []
             for b_idx in range(preds_raw.shape[0]):
-                cleaned_p = post_transform(preds_raw[b_idx])
+                # MONAI的后处理操作默认是就地修改(in-place)！必须添加 clone()！！！
+                cleaned_p = post_transform(preds_raw[b_idx].clone())
                 preds_post.append(cleaned_p)
             preds_post = torch.stack(preds_post, dim=0)
 
@@ -157,21 +173,36 @@ def main():
 
     mean_cldice = cldice_sum / val_steps if val_steps > 0 else 0.0
 
-    print("\n" + "="*55)
-    print(" 📊 FINAL VALIDATION REPORT")
-    print("="*55)
-    print("【 综合核心指标 (Overall Metrics) 】")
-    print(f" 🔹 Raw Dice (生推断)             : {mean_raw_dice:.4f}")
-    print(f" 🔹 Post-Processed Dice (去噪后)  : {mean_post_dice:.4f}")
-    print(f" 🔹 clDice (全局拓扑连通性能)     : {mean_cldice:.4f}")
-    print(f" 🔹 95HD (豪斯多夫距离)           : {mean_hd95:.4f}")
-    print(f" 🔹 Precision (精确率/查准)       : {precision:.4f}")
-    print(f" 🔹 Sensitivity (敏感度/查全)     : {sensitivity:.4f}")
-    print("-" * 55)
-    print("【 细分类别解剖 (Class Decomposition After Post-Proc) 】")
-    print(f" 🩸 HV (Hepatic Vein) Dice    : {hv_dice:.4f}")
-    print(f" 🩸 PV (Portal Vein) Dice     : {pv_dice:.4f}")
-    print("="*55)
+    from pathlib import Path
+    train_name = Path(args.weights).parent.parent.name
+    save_dir = os.path.join("runs", "val", train_name)
+    os.makedirs(save_dir, exist_ok=True)
+    report_file = os.path.join(save_dir, "validation_report.txt")
+
+    report_str = (
+        f"\n{'='*55}\n"
+        f" 📊 FINAL VALIDATION REPORT\n"
+        f"{'='*55}\n"
+        f"【 综合核心指标 (Overall Metrics) 】\n"
+        f" 🔹 Raw Dice (生推断)             : {mean_raw_dice:.4f}\n"
+        f" 🔹 Post-Processed Dice (去噪后)  : {mean_post_dice:.4f}\n"
+        f" 🔹 clDice (全局拓扑连通性能)     : {mean_cldice:.4f}\n"
+        f" 🔹 95HD (豪斯多夫距离)           : {mean_hd95:.4f}\n"
+        f" 🔹 Precision (精确率/查准)       : {precision:.4f}\n"
+        f" 🔹 Sensitivity (敏感度/查全)     : {sensitivity:.4f}\n"
+        f"{'-' * 55}\n"
+        f"【 细分类别解剖 (Class Decomposition After Post-Proc) 】\n"
+        f" 🩸 HV (Hepatic Vein) Dice    : {hv_dice:.4f}\n"
+        f" 🩸 PV (Portal Vein) Dice     : {pv_dice:.4f}\n"
+        f"{'='*55}\n"
+    )
+    
+    print(report_str)
+    
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write(report_str)
+        
+    print(f"📝 验证报告已经成功保存至: {report_file}\n")
 
 if __name__ == "__main__":
     main()
