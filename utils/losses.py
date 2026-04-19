@@ -87,7 +87,8 @@ class CombinedLoss(nn.Module):
         # 如果设置了预热，则初始 alpha 强制为 1.0 (纯 DiceCE)，否则直接使用 target_alpha
         self.current_alpha = 1.0 if (warmup_epochs > 0 or anneal_epochs > 0) else target_alpha
         
-        self.dice_ce = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
+        from monai.losses import TverskyLoss
+        self.tversky = TverskyLoss(softmax=True, to_onehot_y=True, include_background=False, batch=True, alpha=0.3, beta=0.7)
         self.cldice = SoftClDiceLoss3D(iter_=iter_)
 
     def update_alpha(self, current_epoch):
@@ -110,17 +111,17 @@ class CombinedLoss(nn.Module):
         if isinstance(outputs, (tuple, list)):
             outputs = outputs[0]
 
-        loss_dice_ce = self.dice_ce(outputs, labels)
+        loss_tversky = self.tversky(outputs, labels)
 
         probs = F.softmax(outputs, dim=1)
         labels_onehot = F.one_hot(labels.squeeze(1).long(), num_classes=outputs.shape[1]).permute(0, 4, 1, 2, 3).float()
         
         loss_cldice = self.cldice(labels_onehot, probs)
 
-        loss = self.current_alpha * loss_dice_ce + (1.0 - self.current_alpha) * loss_cldice
+        loss = self.current_alpha * loss_tversky + (1.0 - self.current_alpha) * loss_cldice
 
         # 返回时将当前 alpha 加入日志，以便观察衰减过程
-        return loss, {"dice_ce": loss_dice_ce.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
+        return loss, {"tversky": loss_tversky.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
 
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
