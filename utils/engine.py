@@ -151,7 +151,7 @@ class Trainer:
                         sw_batch_size=8, 
                         predictor=self.model,
                         overlap=0.5,
-                        blend_mode="gaussian"
+                        mode="gaussian"
                     )
                 
                 # VSNet 的推理有时返回单个元组，需要解析
@@ -237,7 +237,7 @@ class Trainer:
                         "sw_batch_size": 8, 
                         "predictor": self.model, 
                         "overlap": 0.5, 
-                        "blend_mode": "gaussian"
+                        "mode": "gaussian"
                     }
                     
                     # Pass 1: Original
