@@ -1,4 +1,5 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 根据需要修改 GPU 编号
 import argparse
 import yaml
 import torch

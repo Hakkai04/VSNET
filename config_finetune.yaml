@@ -1,0 +1,31 @@
+# Project Structure
+project: "runs/train"
+name: "attunet_tversky_finetune"
+model_name: "attention_unet"
+data_dir: "./dataset"
+dataset_json: "dataset_full_thin.json"
+
+# Finetune Base Model Weights (请根据实际路径调整)
+weights: "runs/train/attunet_cldice_TTA2/weights/best.pth"
+
+# Training Hyperparameters
+max_epochs: 2000     # 微调通常很快，不需要设到 10000
+patience: 500
+val_interval: 5
+batch_size: 2
+target_batch_size: 16
+lr: 0.0001           # 学习率直接砍掉10倍 (1e-4)！保证温和过渡
+weight_decay: 0.00001
+patch_size: [96, 96, 96]
+num_samples: 4
+
+# Loss Weights (Tversky已在代码写死 alpha=0.3, beta=0.7)
+alpha: 0.5           # Final Weight for CombinedLoss (Tversky portion) after warmup
+warmup_epochs: 0     # 🚨 极其重要：微调不用再预热了，直接0！硬切 Tversky！
+anneal_epochs: 50    # 可以留50个轮次的衰减缓冲，让 clDice 平滑切入
+
+# Data Normalization
+a_min: -200.0
+a_max: 250.0
+b_min: 0.0
+b_max: 1.0

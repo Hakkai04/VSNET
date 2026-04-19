@@ -58,6 +58,7 @@ def get_config():
     parser.add_argument("--model_name", type=str, help="Model to train (e.g. vsnet, unet, vnet, attention_unet)")
     parser.add_argument("--batch_size", type=int, help="Physical batch size per GPU")
     parser.add_argument("--max_epochs", type=int, help="Maximum number of epochs")
+    parser.add_argument("--weights", type=str, help="Path to pretrained weights for fine-tuning")
     
     args = parser.parse_args()
     
@@ -120,6 +121,16 @@ def main():
     # 2. 数据与模型准备
     train_loader, val_loader = get_dataloader(config)
     model = build_model(config, device=device)
+    
+    weights_path = config.get("weights", "")
+    if weights_path and os.path.exists(weights_path):
+        logger.info(f"🔄 Loading pretrained weights from: {weights_path}")
+        checkpoint = torch.load(weights_path, map_location=device)
+        if 'model_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            model.load_state_dict(checkpoint)
+        logger.info("✅ Pretrained model state loaded. Optimizer will start fresh!")
     
     params_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model parameters: {params_num / 1e6:.2f}M")
