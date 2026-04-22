@@ -49,11 +49,11 @@ def build_model(config, device="cpu"):
         )
     elif name == "swin_unetr":
         model = SwinUNETR(
-            img_size=patch_size,
             in_channels=1,
             out_channels=3,
             feature_size=48,
-            use_checkpoint=True
+            use_checkpoint=True,
+            spatial_dims=3
         )
     else:
         raise ValueError(f"Unknown model_name: {name}")

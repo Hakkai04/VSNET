@@ -4,6 +4,7 @@ import os
 # 1. 显卡与绘图后端设置 (必须在最前面)
 # ==========================================
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 根据需要修改 GPU 编号
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import sys
 import yaml
 import json
@@ -125,11 +126,13 @@ def main():
     weights_path = config.get("weights", "")
     if weights_path and os.path.exists(weights_path):
         logger.info(f"🔄 Loading pretrained weights from: {weights_path}")
-        checkpoint = torch.load(weights_path, map_location=device)
+        checkpoint = torch.load(weights_path, map_location=device, weights_only=False)
         if 'model_state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
+            state_dict = checkpoint['model_state_dict']
         else:
-            model.load_state_dict(checkpoint)
+            state_dict = checkpoint
+            
+        model.load_state_dict(state_dict, strict=False)
         logger.info("✅ Pretrained model state loaded. Optimizer will start fresh!")
     
     params_num = sum(p.numel() for p in model.parameters() if p.requires_grad)

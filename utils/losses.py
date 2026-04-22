@@ -84,11 +84,12 @@ class CombinedLoss(nn.Module):
         self.warmup_epochs = warmup_epochs
         self.anneal_epochs = anneal_epochs
         
-        # 如果设置了预热，则初始 alpha 强制为 1.0 (纯 DiceCE)，否则直接使用 target_alpha
         self.current_alpha = 1.0 if (warmup_epochs > 0 or anneal_epochs > 0) else target_alpha
         
-        from monai.losses import TverskyLoss
+        from monai.losses import TverskyLoss, DiceCELoss
         self.tversky = TverskyLoss(softmax=True, to_onehot_y=True, include_background=False, batch=True, alpha=0.3, beta=0.7)
+        # 为 Transformer 补充必备的 Cross-Entropy 提供稠密梯度锚点
+        self.dice_ce = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
         self.cldice = SoftClDiceLoss3D(iter_=iter_)
 
     def update_alpha(self, current_epoch):
@@ -100,7 +101,6 @@ class CombinedLoss(nn.Module):
             self.current_alpha = 1.0
         elif current_epoch <= self.warmup_epochs + self.anneal_epochs:
             progress = (current_epoch - self.warmup_epochs) / self.anneal_epochs
-            # 线性衰减：从 1.0 到 target_alpha
             self.current_alpha = 1.0 - progress * (1.0 - self.target_alpha)
         else:
             self.current_alpha = self.target_alpha
@@ -112,16 +112,28 @@ class CombinedLoss(nn.Module):
             outputs = outputs[0]
 
         loss_tversky = self.tversky(outputs, labels)
+        loss_dice_ce = self.dice_ce(outputs, labels)
 
         probs = F.softmax(outputs, dim=1)
         labels_onehot = F.one_hot(labels.squeeze(1).long(), num_classes=outputs.shape[1]).permute(0, 4, 1, 2, 3).float()
         
-        loss_cldice = self.cldice(labels_onehot, probs)
+        # 🟢 方案三：动态置信度掩码 (Dynamic Confidence Masking)
+        # 找到预测与标签极度接近（误差 < 0.1，如 p>0.9 且 y=1）的自信区域
+        with torch.no_grad():
+            confident_correct = torch.abs(probs - labels_onehot) < 0.1
+            
+        # 在传递给 clDice 前，将这些自信区域直接替换为绝对正确的 One-Hot 标签
+        # 这样能保障软骨架提取网络 (soft_skel) 拿到完整的管道，但在计算反向传播梯度时，
+        # 粗大血管的梯度在这个环节被主动阻断为 0。clDice 被迫全心全意去拯救那些断联的小树枝！
+        probs_for_cldice = torch.where(confident_correct, labels_onehot.detach(), probs)
+        
+        loss_cldice = self.cldice(labels_onehot, probs_for_cldice)
 
-        loss = self.current_alpha * loss_tversky + (1.0 - self.current_alpha) * loss_cldice
+        # 核心改动：基础损失同时包含 Tversky(用于高召回率) 和 DiceCE(用于稳定 Transformer 的空间梯度)
+        base_seg_loss = 0.5 * loss_tversky + 0.5 * loss_dice_ce
+        loss = self.current_alpha * base_seg_loss + (1.0 - self.current_alpha) * loss_cldice
 
-        # 返回时将当前 alpha 加入日志，以便观察衰减过程
-        return loss, {"tversky": loss_tversky.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
+        return loss, {"base_seg": base_seg_loss.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
 
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
