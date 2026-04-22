@@ -1,0 +1,37 @@
+# ============================================================
+# EdgeGuidedSwinUNETR: 双分支边缘引导注意力 Swin-UNETR 配置
+# ============================================================
+
+# Project Structure
+project: "runs/train"
+name: "edge_guided_swin_unetr"
+model_name: "edge_guided_swin_unetr"
+data_dir: "./dataset"
+dataset_json: "dataset_full_thin.json"
+
+# Pretrained Weights (使用你之前训练的最佳 Swin-UNETR 权重作为骨干初始化)
+# 由于 strict=False, 新增的 EdgeBranch 和 EAG 模块会自动随机初始化
+weights: "runs/train/swin_unetr_cldice/weights/best.pth"
+
+# Training Hyperparameters
+max_epochs: 10000
+patience: 1000
+val_interval: 5
+batch_size: 1
+target_batch_size: 16
+lr: 0.0001           # Transformer 微调使用较小的学习率
+weight_decay: 0.0001
+patch_size: [96, 96, 96]
+num_samples: 4
+
+# Loss Weights
+alpha: 0.5           # Tversky / clDice 的比例 (预热结束后)
+warmup_epochs: 30    # 纯 Tversky 预热（骨干已有知识，缩短预热）
+anneal_epochs: 30    # 平滑拉升 clDice
+edge_weight: 1.0     # 边缘分支 Loss 的权重
+
+# Data Normalization
+a_min: -200.0
+a_max: 250.0
+b_min: 0.0
+b_max: 1.0

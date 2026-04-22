@@ -122,6 +122,76 @@ class CombinedLoss(nn.Module):
         # 返回时将当前 alpha 加入日志，以便观察衰减过程
         return loss, {"tversky": loss_tversky.item(), "cldice": loss_cldice.item(), "total": loss.item(), "cur_α": self.current_alpha}
 
+class EdgeGuidedCombinedLoss(nn.Module):
+    """
+    双分支边缘引导 Loss:
+      - 主分割分支: Tversky Loss + clDice Loss (与 CombinedLoss 完全一致)
+      - 边缘分支:   DiceCE Loss (边界监督)
+      - 总 Loss = seg_loss + edge_weight * edge_loss
+    """
+    def __init__(self, target_alpha=0.5, warmup_epochs=0, anneal_epochs=0, iter_=3, edge_weight=1.0):
+        super().__init__()
+        self.target_alpha = target_alpha
+        self.warmup_epochs = warmup_epochs
+        self.anneal_epochs = anneal_epochs
+        self.edge_weight = edge_weight
+        
+        self.current_alpha = 1.0 if (warmup_epochs > 0 or anneal_epochs > 0) else target_alpha
+        
+        self.tversky = TverskyLoss(softmax=True, to_onehot_y=True, include_background=False, batch=True, alpha=0.3, beta=0.7)
+        self.cldice = SoftClDiceLoss3D(iter_=iter_)
+        self.edge_loss = DiceCELoss(softmax=True, to_onehot_y=True, include_background=False, batch=True)
+
+    def update_alpha(self, current_epoch):
+        if self.warmup_epochs == 0 and self.anneal_epochs == 0:
+            self.current_alpha = self.target_alpha
+            return
+            
+        if current_epoch <= self.warmup_epochs:
+            self.current_alpha = 1.0
+        elif current_epoch <= self.warmup_epochs + self.anneal_epochs:
+            progress = (current_epoch - self.warmup_epochs) / self.anneal_epochs
+            self.current_alpha = 1.0 - progress * (1.0 - self.target_alpha)
+        else:
+            self.current_alpha = self.target_alpha
+
+    def forward(self, outputs, targets):
+        labels = targets["label"]
+        
+        # 解析模型输出：训练时 (seg_logits, edge_logits)
+        if isinstance(outputs, (tuple, list)):
+            seg_logits = outputs[0]
+            edge_logits = outputs[1] if len(outputs) > 1 else None
+        else:
+            seg_logits = outputs
+            edge_logits = None
+
+        # === 主分割 Loss (Tversky + clDice) ===
+        loss_tversky = self.tversky(seg_logits, labels)
+        
+        probs = F.softmax(seg_logits, dim=1)
+        labels_onehot = F.one_hot(labels.squeeze(1).long(), num_classes=seg_logits.shape[1]).permute(0, 4, 1, 2, 3).float()
+        loss_cldice = self.cldice(labels_onehot, probs)
+        
+        seg_loss = self.current_alpha * loss_tversky + (1.0 - self.current_alpha) * loss_cldice
+        
+        # === 边缘分支 Loss ===
+        loss_edge = torch.tensor(0.0, device=seg_logits.device)
+        if edge_logits is not None and "edge" in targets:
+            edges = targets["edge"]
+            loss_edge = self.edge_loss(edge_logits, edges)
+        
+        # === 总 Loss ===
+        total_loss = seg_loss + self.edge_weight * loss_edge
+        
+        return total_loss, {
+            "tversky": loss_tversky.item(), 
+            "cldice": loss_cldice.item(), 
+            "edge": loss_edge.item(),
+            "total": total_loss.item(), 
+            "cur_α": self.current_alpha
+        }
+
 class StandardLossWrapper(nn.Module):
     def __init__(self, criterion):
         super().__init__()
@@ -143,6 +213,14 @@ def build_loss(config):
             beta=config.get("beta", 1.0),
             gamma=config.get("gamma", 0.1)
         )
+    elif model_name == "edge_guided_swin_unetr":
+        return EdgeGuidedCombinedLoss(
+            target_alpha=config.get("alpha", 0.5),
+            warmup_epochs=config.get("warmup_epochs", 50),
+            anneal_epochs=config.get("anneal_epochs", 50),
+            iter_=3,
+            edge_weight=config.get("edge_weight", 1.0)
+        )
     elif model_name in ["attention_unet", "swin_unetr"]:
         return CombinedLoss(
             target_alpha=config.get("alpha", 0.5),
@@ -151,8 +229,6 @@ def build_loss(config):
             iter_=3
         )
     else:
-        # 其他 Baseline (如 UNet 等) 的普通 Loss
-        # 因为我们的模型返回的是单张量的 logits，可以直接套用 DiceCELoss
         criterion = DiceCELoss(
             softmax=True, 
             to_onehot_y=True, 
@@ -160,3 +236,4 @@ def build_loss(config):
             batch=True
         )
         return StandardLossWrapper(criterion)
+

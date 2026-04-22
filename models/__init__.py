@@ -1,5 +1,6 @@
 import torch
 from .VSNet import VSNet
+from .EdgeGuidedSwinUNETR import EdgeGuidedSwinUNETR
 from monai.networks.nets import UNet, AttentionUnet, SwinUNETR
 
 def build_model(config, device="cpu"):
@@ -49,6 +50,14 @@ def build_model(config, device="cpu"):
         )
     elif name == "swin_unetr":
         model = SwinUNETR(
+            in_channels=1,
+            out_channels=3,
+            feature_size=48,
+            use_checkpoint=True,
+            spatial_dims=3
+        )
+    elif name == "edge_guided_swin_unetr":
+        model = EdgeGuidedSwinUNETR(
             in_channels=1,
             out_channels=3,
             feature_size=48,

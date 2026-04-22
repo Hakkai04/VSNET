@@ -25,6 +25,9 @@ def get_transforms(config):
     if model_name in ["vsnet", "lynet"]:
         keys = ["image", "label", "edge", "reg"]
         modes = ("bilinear", "nearest", "nearest", "bilinear")
+    elif model_name == "edge_guided_swin_unetr":
+        keys = ["image", "label", "edge"]
+        modes = ("bilinear", "nearest", "nearest")
     else:
         keys = ["image", "label"]
         modes = ("bilinear", "nearest")
@@ -90,6 +93,12 @@ def get_dataloader(config):
                     "label": os.path.normpath(os.path.join(data_dir, item["label"])),
                     "edge": os.path.normpath(os.path.join(data_dir, item["edge"])),
                     "reg": os.path.normpath(os.path.join(data_dir, item["centerline"]))
+                })
+            elif model_name == "edge_guided_swin_unetr":
+                parsed.append({
+                    "image": os.path.normpath(os.path.join(data_dir, item["image"])),
+                    "label": os.path.normpath(os.path.join(data_dir, item["label"])),
+                    "edge": os.path.normpath(os.path.join(data_dir, item["edge"])),
                 })
             else:
                 parsed.append({
