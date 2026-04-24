@@ -74,6 +74,7 @@ def main():
     # 4. 加载检查点
     start_epoch = 1
     best_dice = -1.0
+    best_epoch = -1
     ckpt_path = run_dir / "weights" / "last.pth"
     if ckpt_path.exists():
         checkpoint = torch.load(ckpt_path, map_location=device)
@@ -82,12 +83,13 @@ def main():
         start_epoch = checkpoint['epoch'] + 1
         logger.info(f"✅ Loaded checkpoint from epoch {checkpoint['epoch']}")
         
-        # 恢复 best_dice
+        # 恢复 best_dice 和 best_epoch
         best_ckpt_path = run_dir / "weights" / "best.pth"
         if best_ckpt_path.exists():
             best_ckpt = torch.load(best_ckpt_path, map_location=device)
             best_dice = best_ckpt.get('dice', -1.0)
-            logger.info(f"✅ Recovered best dice: {best_dice:.4f}")
+            best_epoch = best_ckpt.get('epoch', -1)
+            logger.info(f"✅ Recovered best dice: {best_dice:.4f} at epoch {best_epoch}")
     else:
         logger.warning(f"⚠️ No checkpoint found at {ckpt_path}, starting from scratch.")
 
@@ -109,6 +111,8 @@ def main():
     trainer.start_epoch = start_epoch
     if best_dice > 0:
         trainer.best_dice = best_dice
+    if best_epoch > 0:
+        trainer.best_epoch = best_epoch
 
     # 6. 开始训练
     trainer.fit()

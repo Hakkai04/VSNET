@@ -28,7 +28,7 @@ num_samples: 4
 alpha: 0.5           # Tversky / clDice 的比例 (预热结束后)
 warmup_epochs: 30    # 纯 Tversky 预热（骨干已有知识，缩短预热）
 anneal_epochs: 30    # 平滑拉升 clDice
-edge_weight: 1.0     # 边缘分支 Loss 的权重
+edge_weight: 0.2     # 边缘分支 Loss 的权重 (辅助引导，不宜过大)
 
 # Data Normalization
 a_min: -200.0
