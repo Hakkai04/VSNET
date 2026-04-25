@@ -131,27 +131,9 @@ def main():
             state_dict = checkpoint['model_state_dict']
         else:
             state_dict = checkpoint
-        
-        # ---- 自动前缀映射 ----
-        # 如果模型是 EdgeGuidedSwinUNETR（内部将 SwinUNETR 包装在 self.swin_unetr 中），
-        # 而预训练权重来自独立训练的 SwinUNETR（key 没有 'swin_unetr.' 前缀），
-        # 则需要自动添加前缀使 key 匹配。
-        model_keys = set(model.state_dict().keys())
-        ckpt_keys = set(state_dict.keys())
-        
-        # 检测是否需要添加前缀：如果 checkpoint 的 key 都不在模型中，
-        # 但加上 'swin_unetr.' 前缀后能匹配，则执行映射
-        if len(model_keys & ckpt_keys) == 0:
-            prefixed = {f"swin_unetr.{k}": v for k, v in state_dict.items()}
-            if len(model_keys & set(prefixed.keys())) > 0:
-                logger.info("🔧 检测到权重 key 前缀不匹配，自动添加 'swin_unetr.' 前缀进行映射")
-                state_dict = prefixed
-        
-        missing, unexpected = model.load_state_dict(state_dict, strict=False)
-        logger.info(f"✅ Pretrained weights loaded. Missing: {len(missing)} keys, Unexpected: {len(unexpected)} keys")
-        if missing:
-            logger.info(f"   Missing keys (新增模块，将随机初始化): {missing[:5]}{'...' if len(missing) > 5 else ''}")
-        logger.info("✅ Optimizer will start fresh!")
+            
+        model.load_state_dict(state_dict, strict=False)
+        logger.info("✅ Pretrained model state loaded. Optimizer will start fresh!")
     
     params_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model parameters: {params_num / 1e6:.2f}M")
